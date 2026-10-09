@@ -62,11 +62,6 @@ export function extractToken(req: Request): string | null {
     return authHeader.substring(7).trim();
   }
 
-  // 3. Fallback check for query token (SSE event streams / websocket connect)
-  if (req.query && typeof req.query.token === 'string') {
-    return req.query.token;
-  }
-
   return null;
 }
 
@@ -204,6 +199,9 @@ function isAllowedOrigin(originStr: string): boolean {
     if (parsed.hostname === 'localhost' || parsed.hostname === '127.0.0.1') {
       return true;
     }
+    if (parsed.hostname.endsWith('.onrender.com')) {
+      return true;
+    }
     if (config.appOrigin) {
       try {
         const appUrl = new URL(config.appOrigin);
@@ -233,6 +231,11 @@ function isAllowedOrigin(originStr: string): boolean {
  * - Enforces custom header (X-Requested-With / X-CSRF-Token) for cookie sessions
  */
 export function csrfProtection(req: Request, res: Response, next: NextFunction) {
+  // Webhooks are machine-to-machine with cryptographic signature validation (e.g. Razorpay HMAC)
+  if (req.path.startsWith('/api/webhooks/')) {
+    return next();
+  }
+
   const mutatingMethods = ['POST', 'PUT', 'PATCH', 'DELETE'];
   if (!mutatingMethods.includes(req.method)) {
     return next();

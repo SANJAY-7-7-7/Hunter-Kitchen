@@ -9,12 +9,18 @@
     "start": "node dist/server.cjs",
     "preview": "vite preview",
     "clean": "rm -rf dist server.js",
+    "pack": "tsx scripts/pack_release.ts",
     "lint": "tsc --noEmit",
     "test:verification": "tsx scripts/verify-production.ts",
+    "test:payments": "tsx scripts/verify-payments-and-security.ts",
     "db:view": "tsx scripts/view-database.ts",
     "db:verify": "tsx scripts/verify-postgres-production.ts",
     "db:migrate": "node dist/migrate.cjs",
-    "db:seed": "node dist/seed.cjs"
+    "db:seed": "node dist/seed.cjs",
+    "db:backup": "tsx scripts/backup-postgres.ts",
+    "db:restore": "tsx scripts/restore-postgres.ts",
+    "db:drill": "tsx scripts/test-restore-drill.ts",
+    "db:reset-reviews": "tsx scripts/reset-reviews.ts"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",
@@ -27,6 +33,7 @@
     "dotenv": "^17.2.3",
     "express": "^4.21.2",
     "google-auth-library": "^11.0.2",
+    "ioredis": "^6.0.0",
     "jsonwebtoken": "^9.0.3",
     "jspdf": "^4.2.1",
     "jspdf-autotable": "^5.0.8",

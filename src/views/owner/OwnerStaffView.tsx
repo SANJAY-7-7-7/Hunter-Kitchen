@@ -318,15 +318,15 @@ export const OwnerStaffView: React.FC = () => {
   return (
     <div className="pb-28 md:pb-10 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 sm:py-6 space-y-5">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
-          <h2 className="text-xl font-black text-stone-900 tracking-tight">Staff & Delivery Fleet</h2>
+          <h2 className="text-xl sm:text-2xl font-black text-stone-900 tracking-tight">Staff & Delivery Fleet</h2>
           <p className="text-xs text-stone-500 font-medium mt-0.5">Manage kitchen staff roles, delivery fleet, & contact credentials</p>
         </div>
 
         <button
           onClick={() => (activeTab === 'STAFF' ? handleOpenAddStaff() : handleOpenAddDriver())}
-          className="px-4 py-2.5 rounded-xl bg-red-700 text-white font-extrabold text-xs flex items-center gap-1.5 shadow-md shadow-red-700/20 hover:bg-red-800 active:scale-95 transition-all cursor-pointer"
+          className="self-start sm:self-auto px-4 py-2.5 rounded-xl bg-red-700 text-white font-extrabold text-xs inline-flex items-center gap-1.5 shadow-md shadow-red-700/20 hover:bg-red-800 active:scale-95 transition-all cursor-pointer whitespace-nowrap shrink-0"
         >
           <Plus className="w-4 h-4 stroke-[2.5]" />
           <span>Add {activeTab === 'STAFF' ? 'Staff' : 'Driver'}</span>
@@ -354,31 +354,66 @@ export const OwnerStaffView: React.FC = () => {
         )}
       </div>
 
-      {/* Tabs */}
-      <div className="flex bg-stone-100 p-1.5 rounded-2xl border border-stone-200 shadow-2xs">
-        <button
-          onClick={() => setActiveTab('STAFF')}
-          className={`flex-1 py-2.5 text-xs sm:text-sm font-extrabold rounded-xl flex items-center justify-center gap-2 transition-all cursor-pointer ${
-            activeTab === 'STAFF'
-              ? 'bg-white text-stone-900 shadow-sm font-black'
-              : 'text-stone-600 hover:text-stone-900'
-          }`}
-        >
-          <Users className="w-4 h-4 text-blue-600" />
-          <span>Kitchen Staff ({staffList.length})</span>
-        </button>
+      {/* Premium Symmetrical Segmented Tab Control */}
+      <div className="bg-stone-100 p-1 sm:p-1.5 rounded-2xl border border-stone-200/90 shadow-2xs">
+        <div className="grid grid-cols-2 gap-1 sm:gap-1.5">
+          <button
+            type="button"
+            onClick={() => setActiveTab('STAFF')}
+            className={`h-10 sm:h-11 px-2.5 sm:px-4 rounded-xl inline-flex items-center justify-center gap-1.5 sm:gap-2 transition-all duration-150 cursor-pointer select-none ${
+              activeTab === 'STAFF'
+                ? 'bg-white text-stone-900 shadow-xs border border-stone-200/80 font-black'
+                : 'text-stone-500 hover:text-stone-800 hover:bg-stone-200/50 font-bold'
+            }`}
+          >
+            <Users
+              className={`w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0 transition-colors ${
+                activeTab === 'STAFF' ? 'text-blue-600' : 'text-stone-400'
+              }`}
+            />
+            <span className="text-xs sm:text-sm tracking-tight whitespace-nowrap font-bold">
+              Kitchen Staff
+            </span>
+            <span
+              className={`h-5 min-w-[20px] px-1.5 inline-flex items-center justify-center rounded-full text-[10px] font-black leading-none shrink-0 transition-colors ${
+                activeTab === 'STAFF'
+                  ? 'bg-blue-100 text-blue-800 border border-blue-200/80'
+                  : 'bg-stone-200/90 text-stone-600'
+              }`}
+            >
+              {staffList.length}
+            </span>
+          </button>
 
-        <button
-          onClick={() => setActiveTab('DELIVERY')}
-          className={`flex-1 py-2.5 text-xs sm:text-sm font-extrabold rounded-xl flex items-center justify-center gap-2 transition-all cursor-pointer ${
-            activeTab === 'DELIVERY'
-              ? 'bg-white text-stone-900 shadow-sm font-black'
-              : 'text-stone-600 hover:text-stone-900'
-          }`}
-        >
-          <Bike className="w-4 h-4 text-rose-600" />
-          <span>Delivery Partners ({deliveryList.length})</span>
-        </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab('DELIVERY')}
+            className={`h-10 sm:h-11 px-2.5 sm:px-4 rounded-xl inline-flex items-center justify-center gap-1.5 sm:gap-2 transition-all duration-150 cursor-pointer select-none ${
+              activeTab === 'DELIVERY'
+                ? 'bg-white text-stone-900 shadow-xs border border-stone-200/80 font-black'
+                : 'text-stone-500 hover:text-stone-800 hover:bg-stone-200/50 font-bold'
+            }`}
+          >
+            <Bike
+              className={`w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0 transition-colors ${
+                activeTab === 'DELIVERY' ? 'text-rose-600' : 'text-stone-400'
+              }`}
+            />
+            <span className="text-xs sm:text-sm tracking-tight whitespace-nowrap font-bold">
+              <span className="sm:hidden">Delivery Fleet</span>
+              <span className="hidden sm:inline">Delivery Partners</span>
+            </span>
+            <span
+              className={`h-5 min-w-[20px] px-1.5 inline-flex items-center justify-center rounded-full text-[10px] font-black leading-none shrink-0 transition-colors ${
+                activeTab === 'DELIVERY'
+                  ? 'bg-rose-100 text-rose-800 border border-rose-200/80'
+                  : 'bg-stone-200/90 text-stone-600'
+              }`}
+            >
+              {deliveryList.length}
+            </span>
+          </button>
+        </div>
       </div>
 
       {/* List Content */}
@@ -398,41 +433,59 @@ export const OwnerStaffView: React.FC = () => {
             {filteredStaff.map((st) => (
               <div
                 key={st.id}
-                className="bg-white rounded-2xl border border-stone-200/90 p-4 shadow-2xs hover:border-stone-300 hover:shadow-xs transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-3.5"
+                className="bg-white rounded-2xl border border-stone-200 p-4 shadow-2xs hover:border-stone-300 hover:shadow-xs transition-all flex flex-col justify-between gap-3"
               >
-                <div className="flex items-start sm:items-center gap-3.5 min-w-0 flex-1">
-                  <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-blue-50 to-blue-100/90 border border-blue-200/70 text-blue-700 flex items-center justify-center font-black text-lg shrink-0 shadow-2xs">
+                {/* Header Row: Avatar + Name & Clean Role Badge */}
+                <div className="flex items-start gap-3 min-w-0">
+                  <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-blue-50 to-blue-100/90 border border-blue-200/70 text-blue-700 flex items-center justify-center font-black text-base shrink-0 shadow-2xs">
                     {st.name ? st.name.charAt(0).toUpperCase() : 'S'}
                   </div>
 
-                  <div className="min-w-0 flex-1">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <h4 className="font-extrabold text-sm sm:text-base text-stone-900 tracking-tight truncate">
+                  <div className="min-w-0 flex-1 space-y-1">
+                    <div className="flex flex-wrap items-center justify-between gap-1.5">
+                      <h4 className="font-extrabold text-sm sm:text-base text-stone-900 tracking-tight">
                         {st.name}
                       </h4>
-                      <span className="text-[11px] font-extrabold uppercase px-2.5 py-0.5 rounded-lg bg-stone-100 text-stone-700 border border-stone-200/80 tracking-wider shrink-0">
-                        {st.staffRole === 'GENERAL_MANAGER' ? 'GENERAL MANAGER (ALL ACCESS & DELIVERY)' : 'KITCHEN STAFF (ACCEPT / REJECT & ASSIGN)'}
+                      <span className="inline-flex items-center gap-1 text-[10px] font-black uppercase px-2 py-0.5 rounded-md bg-stone-100 text-stone-700 border border-stone-200/90 tracking-wider shrink-0">
+                        {st.staffRole === 'GENERAL_MANAGER' ? (
+                          <>
+                            <Shield className="w-3 h-3 text-amber-600" />
+                            <span>General Manager</span>
+                          </>
+                        ) : (
+                          <>
+                            <ChefHat className="w-3 h-3 text-blue-600" />
+                            <span>Kitchen Staff</span>
+                          </>
+                        )}
                       </span>
                     </div>
 
-                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-stone-600 font-semibold mt-1">
-                      <span className="flex items-center gap-1.5 truncate">
-                        <Mail className="w-3.5 h-3.5 text-stone-400 shrink-0" />
-                        <span className="truncate">{st.email}</span>
-                      </span>
-                      <span className="text-stone-300 hidden sm:inline">•</span>
-                      <span className="flex items-center gap-1.5 truncate">
-                        <Phone className="w-3.5 h-3.5 text-stone-400 shrink-0" />
-                        <span>{st.phone}</span>
-                      </span>
-                    </div>
+                    <p className="text-[11px] text-stone-400 font-medium">
+                      {st.staffRole === 'GENERAL_MANAGER'
+                        ? 'Full Access • All Operations & Dispatch'
+                        : 'Order Flow • Accept, Prepare & Dispatch'}
+                    </p>
                   </div>
                 </div>
 
-                <div className="flex items-center justify-between sm:justify-end gap-2.5 pt-2.5 sm:pt-0 border-t sm:border-t-0 border-stone-100 shrink-0">
+                {/* Contact Information */}
+                <div className="flex flex-wrap items-center gap-x-4 gap-y-1 pt-2 border-t border-stone-100 text-xs text-stone-600 font-semibold">
+                  <span className="flex items-center gap-1.5 min-w-0">
+                    <Mail className="w-3.5 h-3.5 text-stone-400 shrink-0" />
+                    <span className="truncate">{st.email}</span>
+                  </span>
+                  <span className="flex items-center gap-1.5 shrink-0">
+                    <Phone className="w-3.5 h-3.5 text-stone-400 shrink-0" />
+                    <span>{st.phone}</span>
+                  </span>
+                </div>
+
+                {/* Footer: Status Pill & Actions */}
+                <div className="flex items-center justify-between pt-2 border-t border-stone-100">
                   <button
                     onClick={() => toggleStaffStatus(st)}
-                    className={`px-3 py-1.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all active:scale-95 shadow-2xs cursor-pointer border ${
+                    className={`px-2.5 py-1 rounded-xl text-[11px] font-black uppercase tracking-wider transition-all active:scale-95 shadow-3xs cursor-pointer border ${
                       st.status === 'ACTIVE'
                         ? 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100'
                         : st.status === 'INVITED'
@@ -447,18 +500,18 @@ export const OwnerStaffView: React.FC = () => {
                   <div className="flex items-center gap-1.5">
                     <button
                       onClick={() => openEditModal(st)}
-                      className="p-2 rounded-xl text-stone-600 hover:bg-stone-100 hover:text-stone-900 border border-stone-200/60 transition-all active:scale-95 cursor-pointer shadow-2xs"
+                      className="p-1.5 sm:p-2 rounded-xl text-stone-600 hover:bg-stone-100 hover:text-stone-900 border border-stone-200/60 transition-all active:scale-95 cursor-pointer shadow-3xs"
                       title="Edit Staff details"
                     >
-                      <Edit className="w-4 h-4 text-stone-700" />
+                      <Edit className="w-3.5 h-3.5" />
                     </button>
 
                     <button
                       onClick={() => handleDeleteTrigger(st)}
-                      className="p-2 rounded-xl text-stone-400 hover:bg-red-50 hover:text-red-600 border border-stone-200/60 transition-all active:scale-95 cursor-pointer shadow-2xs"
-                      title="Delete Staff"
+                      className="p-1.5 sm:p-2 rounded-xl text-stone-400 hover:bg-red-50 hover:text-red-600 hover:border-red-200 border border-stone-200/60 transition-all active:scale-95 cursor-pointer shadow-3xs"
+                      title="Delete staff member"
                     >
-                      <Trash2 className="w-4 h-4 hover:text-red-600" />
+                      <Trash2 className="w-3.5 h-3.5" />
                     </button>
                   </div>
                 </div>
@@ -477,36 +530,25 @@ export const OwnerStaffView: React.FC = () => {
             {filteredDrivers.map((dr) => (
               <div
                 key={dr.id}
-                className="bg-white rounded-2xl border border-stone-200/90 p-4 shadow-2xs hover:border-stone-300 hover:shadow-xs transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-3.5"
+                className="bg-white rounded-2xl border border-stone-200 p-4 shadow-2xs hover:border-stone-300 hover:shadow-xs transition-all flex flex-col justify-between gap-3"
               >
-                <div className="flex items-start sm:items-center gap-3.5 min-w-0 flex-1">
-                  <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-rose-50 to-rose-100/90 border border-rose-200/70 text-rose-600 flex items-center justify-center font-bold text-base shrink-0 shadow-2xs">
-                    <Bike className="w-6 h-6 stroke-[2.2]" />
+                {/* Header Row: Avatar + Name & Vehicle Badge */}
+                <div className="flex items-start gap-3 min-w-0">
+                  <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-rose-50 to-rose-100/90 border border-rose-200/70 text-rose-600 flex items-center justify-center font-bold text-base shrink-0 shadow-2xs">
+                    <Bike className="w-5 h-5 stroke-[2.2]" />
                   </div>
 
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2">
-                      <h4 className="font-extrabold text-sm sm:text-base text-stone-900 tracking-tight truncate">
+                  <div className="min-w-0 flex-1 space-y-1">
+                    <div className="flex flex-wrap items-center justify-between gap-1.5">
+                      <h4 className="font-extrabold text-sm sm:text-base text-stone-900 tracking-tight">
                         {dr.name}
                       </h4>
-                      <span className="font-extrabold text-stone-700 bg-stone-100 px-2 py-0.5 rounded-lg border border-stone-200 text-[11px] uppercase tracking-wider">
+                      <span className="font-extrabold text-stone-700 bg-stone-100 px-2 py-0.5 rounded-md border border-stone-200 text-[11px] uppercase tracking-wider shrink-0">
                         {dr.vehicleNumber || 'Bike'}
                       </span>
                     </div>
 
-                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-stone-600 font-semibold mt-1">
-                      <span className="flex items-center gap-1.5 truncate">
-                        <Mail className="w-3.5 h-3.5 text-stone-400 shrink-0" />
-                        <span className="truncate">{dr.email}</span>
-                      </span>
-                      <span className="text-stone-300 hidden sm:inline">•</span>
-                      <span className="flex items-center gap-1.5 truncate">
-                        <Phone className="w-3.5 h-3.5 text-stone-400 shrink-0" />
-                        <span>{dr.phone}</span>
-                      </span>
-                    </div>
-
-                    <div className="flex items-center gap-2 text-xs font-extrabold text-amber-600 mt-1">
+                    <div className="flex items-center gap-2 text-xs font-extrabold text-amber-600">
                       <span className="flex items-center gap-1 text-amber-500 font-black">
                         <Star className="w-3.5 h-3.5 fill-current" />
                         <span className="text-stone-900 font-black">{dr.currentRating || 5.0}</span>
@@ -519,10 +561,23 @@ export const OwnerStaffView: React.FC = () => {
                   </div>
                 </div>
 
-                <div className="flex items-center justify-between sm:justify-end gap-2.5 pt-2.5 sm:pt-0 border-t sm:border-t-0 border-stone-100 shrink-0">
+                {/* Contact Information */}
+                <div className="flex flex-wrap items-center gap-x-4 gap-y-1 pt-2 border-t border-stone-100 text-xs text-stone-600 font-semibold">
+                  <span className="flex items-center gap-1.5 min-w-0">
+                    <Mail className="w-3.5 h-3.5 text-stone-400 shrink-0" />
+                    <span className="truncate">{dr.email}</span>
+                  </span>
+                  <span className="flex items-center gap-1.5 shrink-0">
+                    <Phone className="w-3.5 h-3.5 text-stone-400 shrink-0" />
+                    <span>{dr.phone}</span>
+                  </span>
+                </div>
+
+                {/* Footer: Status Pill & Actions */}
+                <div className="flex items-center justify-between pt-2 border-t border-stone-100">
                   <button
                     onClick={() => toggleDriverStatus(dr)}
-                    className={`px-3 py-1.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all active:scale-95 shadow-2xs cursor-pointer border ${
+                    className={`px-2.5 py-1 rounded-xl text-[11px] font-black uppercase tracking-wider transition-all active:scale-95 shadow-3xs cursor-pointer border ${
                       dr.partnerStatus === 'ONLINE'
                         ? 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100'
                         : 'bg-stone-100 text-stone-600 border-stone-200 hover:bg-stone-200'
@@ -535,18 +590,18 @@ export const OwnerStaffView: React.FC = () => {
                   <div className="flex items-center gap-1.5">
                     <button
                       onClick={() => openEditModal(dr)}
-                      className="p-2 rounded-xl text-stone-600 hover:bg-stone-100 hover:text-stone-900 border border-stone-200/60 transition-all active:scale-95 cursor-pointer shadow-2xs"
+                      className="p-1.5 sm:p-2 rounded-xl text-stone-600 hover:bg-stone-100 hover:text-stone-900 border border-stone-200/60 transition-all active:scale-95 cursor-pointer shadow-3xs"
                       title="Edit Delivery Partner details"
                     >
-                      <Edit className="w-4 h-4 text-stone-700" />
+                      <Edit className="w-3.5 h-3.5" />
                     </button>
 
                     <button
                       onClick={() => handleDeleteTrigger(dr)}
-                      className="p-2 rounded-xl text-stone-400 hover:bg-red-50 hover:text-red-600 border border-stone-200/60 transition-all active:scale-95 cursor-pointer shadow-2xs"
+                      className="p-1.5 sm:p-2 rounded-xl text-stone-400 hover:bg-red-50 hover:text-red-600 hover:border-red-200 border border-stone-200/60 transition-all active:scale-95 cursor-pointer shadow-3xs"
                       title="Delete Delivery Partner"
                     >
-                      <Trash2 className="w-4 h-4 hover:text-red-600" />
+                      <Trash2 className="w-3.5 h-3.5" />
                     </button>
                   </div>
                 </div>

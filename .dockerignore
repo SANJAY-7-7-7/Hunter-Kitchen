@@ -5,6 +5,10 @@ dist
 .env
 .env.*
 !.env.example
+data
+backups
+*.sql
+*.dump
 *.log
 npm-debug.log*
 .DS_Store

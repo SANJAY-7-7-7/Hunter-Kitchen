@@ -207,13 +207,79 @@ export const NotificationProvider: React.FC<{ children: ReactNode }> = ({ childr
     // Initial check
     checkActiveOrdersStatus();
 
-    // Poll every 8 seconds for real-time order push updates
-    const interval = setInterval(checkActiveOrdersStatus, 8000);
+    // Poll every 5 seconds for real-time order push updates
+    const interval = setInterval(checkActiveOrdersStatus, 5000);
     return () => {
       isMounted = false;
       clearInterval(interval);
     };
   }, [currentUser?.id, currentUser?.role]);
+
+  // Real-Time Server-Sent Events (SSE) Stream Connection for instantaneous sync
+  useEffect(() => {
+    if (!currentUser) return;
+
+    let eventSource: EventSource | null = null;
+    let reconnectTimeout: NodeJS.Timeout | null = null;
+    let isDisposed = false;
+
+    const connectSSE = () => {
+      if (isDisposed) return;
+      try {
+        eventSource = new EventSource('/api/events/stream', { withCredentials: true });
+
+        const handleIncomingEvent = (e: MessageEvent) => {
+          try {
+            const data = JSON.parse(e.data);
+            window.dispatchEvent(new CustomEvent('hk:order_update', { detail: data }));
+          } catch {}
+        };
+
+        eventSource.onmessage = handleIncomingEvent;
+
+        const eventTypes = [
+          'ORDER_CREATED',
+          'ORDER_ACCEPTED',
+          'ORDER_REJECTED',
+          'ORDER_PREPARING',
+          'ORDER_READY',
+          'ORDER_ASSIGNED',
+          'ORDER_PICKED_UP',
+          'ORDER_OUT_FOR_DELIVERY',
+          'ORDER_DELIVERED',
+          'ORDER_CANCELLED',
+          'ORDER_STATUS_CHANGED',
+          'PAYMENT_CAPTURED'
+        ];
+
+        eventTypes.forEach((evt) => {
+          eventSource?.addEventListener(evt, handleIncomingEvent as EventListener);
+        });
+
+        eventSource.onerror = () => {
+          if (eventSource) {
+            eventSource.close();
+            eventSource = null;
+          }
+          if (!isDisposed) {
+            reconnectTimeout = setTimeout(connectSSE, 4000);
+          }
+        };
+      } catch (err) {
+        if (!isDisposed) {
+          reconnectTimeout = setTimeout(connectSSE, 4000);
+        }
+      }
+    };
+
+    connectSSE();
+
+    return () => {
+      isDisposed = true;
+      if (reconnectTimeout) clearTimeout(reconnectTimeout);
+      if (eventSource) eventSource.close();
+    };
+  }, [currentUser?.id]);
 
   const removeToast = (id: string) => {
     setToasts((prev) => prev.filter((t) => t.id !== id));

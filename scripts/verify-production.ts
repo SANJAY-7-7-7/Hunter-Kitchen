@@ -129,8 +129,7 @@ async function runTestSuite() {
   const recoveredCount = await outboxRepository.recoverStaleProcessing(60000);
   assert(recoveredCount >= 1, `Worker successfully recovered ${recoveredCount} stale PROCESSING event(s)`);
 
-  const pendingEvents = await outboxRepository.getPendingEvents(50);
-  const foundStaleRecovered = pendingEvents.find((e) => e.id === staleEventId);
+  const foundStaleRecovered = await outboxRepository.getById(staleEventId);
   assert(foundStaleRecovered !== undefined && foundStaleRecovered.status === 'PENDING', 'Stale event was safely reset to PENDING for redelivery');
 
   // -------------------------------------------------------------

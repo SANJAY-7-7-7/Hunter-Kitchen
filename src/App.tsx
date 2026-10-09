@@ -24,20 +24,27 @@ import { OrderTrackingView } from './views/customer/OrderTrackingView';
 import { CustomerOrderHistory } from './views/customer/CustomerOrderHistory';
 import { CustomerProfile } from './views/customer/CustomerProfile';
 
-// Owner Views
-import { OwnerDashboard } from './views/owner/OwnerDashboard';
-import { OwnerOrdersView } from './views/owner/OwnerOrdersView';
-import { OwnerMenuView } from './views/owner/OwnerMenuView';
-import { OwnerStaffView } from './views/owner/OwnerStaffView';
-import { OwnerAnalyticsView } from './views/owner/OwnerAnalyticsView';
-import { OwnerSettingsView } from './views/owner/OwnerSettingsView';
-import { OwnerProfileView } from './views/owner/OwnerProfileView';
+// Owner Views (Lazy Loaded for optimal initial bundle & mobile load performance)
+const OwnerDashboard = React.lazy(() => import('./views/owner/OwnerDashboard').then(m => ({ default: m.OwnerDashboard })));
+const OwnerOrdersView = React.lazy(() => import('./views/owner/OwnerOrdersView').then(m => ({ default: m.OwnerOrdersView })));
+const OwnerMenuView = React.lazy(() => import('./views/owner/OwnerMenuView').then(m => ({ default: m.OwnerMenuView })));
+const OwnerStaffView = React.lazy(() => import('./views/owner/OwnerStaffView').then(m => ({ default: m.OwnerStaffView })));
+const OwnerAnalyticsView = React.lazy(() => import('./views/owner/OwnerAnalyticsView').then(m => ({ default: m.OwnerAnalyticsView })));
+const OwnerSettingsView = React.lazy(() => import('./views/owner/OwnerSettingsView').then(m => ({ default: m.OwnerSettingsView })));
+const OwnerProfileView = React.lazy(() => import('./views/owner/OwnerProfileView').then(m => ({ default: m.OwnerProfileView })));
 
-// Staff & Delivery Views
-import { StaffDashboard } from './views/staff/StaffDashboard';
-import { DeliveryDashboard } from './views/delivery/DeliveryDashboard';
-import { DeliveryHistoryView } from './views/delivery/DeliveryHistoryView';
-import { DeliveryProfileView } from './views/delivery/DeliveryProfileView';
+// Staff & Delivery Views (Lazy Loaded)
+const StaffDashboard = React.lazy(() => import('./views/staff/StaffDashboard').then(m => ({ default: m.StaffDashboard })));
+const DeliveryDashboard = React.lazy(() => import('./views/delivery/DeliveryDashboard').then(m => ({ default: m.DeliveryDashboard })));
+const DeliveryHistoryView = React.lazy(() => import('./views/delivery/DeliveryHistoryView').then(m => ({ default: m.DeliveryHistoryView })));
+const DeliveryProfileView = React.lazy(() => import('./views/delivery/DeliveryProfileView').then(m => ({ default: m.DeliveryProfileView })));
+
+const ViewSuspenseFallback = () => (
+  <div className="flex flex-col items-center justify-center min-h-[50vh] gap-3">
+    <Loader2 className="w-8 h-8 text-red-600 animate-spin" />
+    <span className="text-sm font-medium text-stone-500">Loading module...</span>
+  </div>
+);
 
 export default function App() {
   const {
@@ -132,6 +139,13 @@ export default function App() {
       }
     }
   }, [currentUser?.id, currentUser?.role]);
+
+  // Scroll to top automatically whenever active tab or tracking changes
+  useEffect(() => {
+    window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
+    if (document.documentElement) document.documentElement.scrollTop = 0;
+    if (document.body) document.body.scrollTop = 0;
+  }, [currentTab, trackingOrderId]);
 
   // Loading Screen
   if (isLoading) {
@@ -329,9 +343,11 @@ export default function App() {
       )}
 
       {/* Main View Container */}
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-2 pb-20 md:pb-8">
+      <main className={`max-w-7xl mx-auto pt-2 pb-20 md:pb-8 ${currentTab === 'cart' || currentTab === 'checkout' ? 'px-[10px]' : 'px-4 sm:px-6 lg:px-8'}`}>
         <ErrorBoundary>
-          {renderContent()}
+          <React.Suspense fallback={<ViewSuspenseFallback />}>
+            {renderContent()}
+          </React.Suspense>
         </ErrorBoundary>
       </main>
 

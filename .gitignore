@@ -19,9 +19,11 @@ coverage/
 !.env.example
 
 # Runtime stores, local audit logs, and ephemeral databases
-data/audit_logs.json
-data/idempotency_store.json
-data/outbox_events.json
+data/
+backups/
+*.dump
+*.sql
+*.sql.gz
 
 # Certificates, private keys and tokens
 *.pem

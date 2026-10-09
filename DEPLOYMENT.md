@@ -6,12 +6,16 @@ This guide details the complete deployment process for **Hunter’s Kitchen**, c
 
 ## Architecture Overview
 
-- **Frontend**: React 19 + Vite + Tailwind CSS (compiled into static assets in `dist/`)
+- **Frontend**: React 19 + Vite + Tailwind CSS (optimized manual chunk splitting in `dist/assets/`)
 - **Backend**: Node.js + Express + TypeScript (bundled with `esbuild` into `dist/server.cjs`)
+- **Load Balancer**: Nginx reverse proxy with upstream balancing, HTTP/2, Gzip, and SSE streaming buffer bypass
 - **Primary Database**: PostgreSQL 18.x (ACID-compliant, migrations in `database/migrations/`)
-- **Cache & Rate Limiting**: Redis 7.x (automatic in-memory fallback if Redis is unavailable)
-- **Real-Time Stream**: Server-Sent Events (SSE) via `/api/events/stream`
-- **Background Workers**: Outbox Worker (`outboxWorker.ts`) and Idempotency Reaper
+- **Cache & Rate Limiting**: Redis 7.x (`ioredis` distributed rate limiting + atomic counters with resilient in-memory fallback)
+- **Real-Time Stream**: Multi-node Server-Sent Events (SSE) via `/api/events/stream` backed by Redis Pub/Sub
+- **Background Workers**: Distributed Outbox Worker with PostgreSQL `FOR UPDATE SKIP LOCKED` concurrency
+- **Webhooks**: Incoming payment callbacks (`/api/webhooks/payment`) + HMAC-signed outgoing webhook delivery
+- **Disaster Recovery**: Automated checksummed backup snapshots (`npm run db:backup` / `npm run db:restore`)
+- **CI/CD**: GitHub Actions automated pipeline (`.github/workflows/ci.yml`) testing lint, build, Postgres, Redis & Docker image
 
 ---
 
@@ -112,14 +116,68 @@ curl http://localhost:3000/api/health
      npm run db:seed
      ```
 
-### Render
-1. Create a **PostgreSQL Database** on Render.
-2. Create a **Web Service**:
-   - Build Command: `npm install && npm run build`
-   - Start Command: `npm run start`
-   - Environment: Node.js
-3. Attach `DATABASE_URL` and `NODE_ENV=production`.
-4. In Render Shell, run `npm run db:migrate && npm run db:seed`.
+### Render (Free Tier Web Service) + Supabase (Free Tier PostgreSQL)
+
+This is the recommended 100% free production deployment architecture:
+- **Supabase Free Tier**: Provides managed PostgreSQL 16/17 with 500 MB storage and high availability connection pooling.
+- **Render Free Tier**: Provides free web service hosting with custom domains, automated HTTPS, and CI/CD GitHub deployments.
+
+#### Step 1: Provision Supabase Free Tier PostgreSQL
+1. Sign in or create a free account at [Supabase.com](https://supabase.com).
+2. Click **New Project**:
+   - **Name**: `hunters-kitchen` (or your choice)
+   - **Database Password**: Choose a strong password and **save it securely**.
+   - **Region**: Choose the region closest to your users (e.g. `ap-south-1` Mumbai / Singapore / `us-east-1`).
+   - **Pricing Plan**: Select **Free ($0/month)**.
+3. Once the database is ready (1-2 minutes):
+   - Click the **Connect** button at the top header (or go to **Project Settings -> Database**).
+   - Under **Connection String**, click the **URI** tab.
+   - Choose **Transaction** mode (port 6543) or **Session** mode (port 5432).
+   - Copy the URI, for example:
+     ```
+     postgresql://postgres.[project-ref]:[YOUR-PASSWORD]@aws-0-[region].pooler.supabase.com:6543/postgres?sslmode=require
+     ```
+   - Replace `[YOUR-PASSWORD]` with the actual database password you chose in step 2.
+
+#### Step 2: Deploy to Render Free Tier
+
+##### Option A: 1-Click Setup with Render Blueprint (`render.yaml`)
+1. Push your repository to GitHub.
+2. Go to your [Render Dashboard](https://dashboard.render.com).
+3. Click **New +** -> **Blueprint**.
+4. Select your `hunter's-kitchen` GitHub repository.
+5. Render detects the bundled `render.yaml` file:
+   - It will auto-populate the build command (`npm install && npm run build`) and start command (`npm run start`).
+   - It will auto-generate secure 32+ character values for `JWT_SECRET` and `SESSION_COOKIE_SECRET`.
+   - Under `DATABASE_URL`, paste your **Supabase PostgreSQL URI** from Step 1.
+6. Click **Apply**. Render will automatically build the React Vite frontend, bundle the Express backend, run migrations, auto-seed the initial menu and owner accounts, and start the app!
+
+##### Option B: Manual Web Service Setup on Render
+1. Go to [Render Dashboard](https://dashboard.render.com).
+2. Click **New +** -> **Web Service**.
+3. Select **Build and deploy from a Git repository** and connect your repo.
+4. Fill in the service configuration:
+   - **Name**: `hunters-kitchen`
+   - **Region**: Singapore (or closest to your Supabase region)
+   - **Branch**: `main`
+   - **Runtime**: `Node`
+   - **Build Command**: `npm install && npm run build`
+   - **Start Command**: `npm run start`
+   - **Instance Type**: `Free`
+5. Under **Advanced -> Environment Variables**, add:
+   - `NODE_ENV`: `production`
+   - `DATABASE_URL`: `[Your Supabase Connection URI from Step 1]`
+   - `DB_SSL`: `true`
+   - `JWT_SECRET`: *(A random 32+ character string, e.g. `openssl rand -hex 32`)*
+   - `SESSION_COOKIE_SECRET`: *(A random 32+ character string)*
+6. Set **Health Check Path** to `/api/health`.
+7. Click **Create Web Service**.
+
+#### Step 3: Zero-Touch Migration & Seeding
+- On first boot, Hunter's Kitchen automatically executes all SQL migrations from `database/migrations/`.
+- If the database is clean (no users), it automatically seeds the initial restaurant settings, menu categories, dish items, and admin/staff accounts from `data/database.json`.
+- The in-memory cache fallback engages automatically without needing a separate Redis instance.
+- You can access your live site at `https://<your-service-name>.onrender.com`.
 
 ---
 

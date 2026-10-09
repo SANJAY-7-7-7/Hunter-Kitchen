@@ -2,9 +2,10 @@ import { Server } from 'http';
 import { outboxWorker } from '../workers/outboxWorker';
 import { eventHub } from '../services/eventHub';
 import { postgresDb } from '../db/postgres';
+import { redisService } from '../services/redisService';
 import { logger } from './logger';
 
-export function setupGracefulShutdown(server: Server) {
+export function setupGracefulShutdown(server: Server, cleanupIntervals: NodeJS.Timeout[] = []) {
   let isShuttingDown = false;
 
   const handleShutdown = async (signal: string) => {
@@ -12,6 +13,9 @@ export function setupGracefulShutdown(server: Server) {
     isShuttingDown = true;
 
     logger.info(`Received ${signal}. Initiating graceful production shutdown...`);
+
+    // 0. Stop periodic timer workers
+    cleanupIntervals.forEach((interval) => clearInterval(interval));
 
     // 1. Stop background workers
     outboxWorker.stop();
@@ -24,6 +28,13 @@ export function setupGracefulShutdown(server: Server) {
       await postgresDb.close();
     } catch (e: any) {
       logger.error('Error closing PostgreSQL pool during shutdown', { error: e.message });
+    }
+
+    // 4. Disconnect Redis client
+    try {
+      await redisService.close();
+    } catch (e: any) {
+      logger.error('Error closing Redis connection during shutdown', { error: e.message });
     }
 
     // 4. Stop accepting new HTTP connections and drain active ones

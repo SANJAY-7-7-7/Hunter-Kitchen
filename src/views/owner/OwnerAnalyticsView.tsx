@@ -24,9 +24,11 @@ export const OwnerAnalyticsView: React.FC = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'OVERVIEW' | 'DISHES' | 'REVIEWS'>('OVERVIEW');
   const [selectedPoint, setSelectedPoint] = useState<{ day: string; revenue: number } | null>(null);
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
-  const loadAnalytics = async (isSilent = false) => {
+  const loadAnalytics = async (isSilent = false, isManual = false) => {
     if (!isSilent) setIsLoading(true);
+    if (isManual) setIsRefreshing(true);
     try {
       const data = await apiService.getAnalytics();
       setAnalytics(data);
@@ -42,6 +44,9 @@ export const OwnerAnalyticsView: React.FC = () => {
       console.error('Failed to load analytics:', err);
     } finally {
       if (!isSilent) setIsLoading(false);
+      if (isManual) {
+        setTimeout(() => setIsRefreshing(false), 600);
+      }
     }
   };
 
@@ -76,59 +81,57 @@ export const OwnerAnalyticsView: React.FC = () => {
 
   return (
     <div className="pb-32 md:pb-12 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 sm:py-6 space-y-6">
-      {/* Premium Header */}
-      <div className="flex items-center justify-between">
+      {/* Header */}
+      <div className="flex items-center justify-between gap-3">
         <div>
-          <div className="flex items-center gap-2">
-            <span className="text-[10px] font-bold text-red-600 uppercase tracking-widest bg-red-50 border border-red-100 px-2.5 py-1 rounded-full">
-              Owner Command Center
-            </span>
-            <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-              Live Real-Time
-            </span>
-          </div>
-          <h2 className="text-xl font-black text-stone-900 mt-1.5">Business Intelligence</h2>
-          <p className="text-[11px] text-stone-500">Live operational insights & food-chain diagnostics</p>
+          <h2 className="text-xl sm:text-2xl font-black text-stone-900 tracking-tight">Business Intelligence</h2>
+          <p className="text-xs text-stone-500 mt-0.5">Live operational insights & food-chain diagnostics</p>
         </div>
 
         <button
-          onClick={() => loadAnalytics(false)}
-          className="p-2.5 rounded-xl bg-white border border-stone-200 hover:bg-stone-50 text-stone-700 shadow-3xs transition-all active:scale-95 cursor-pointer"
+          onClick={() => loadAnalytics(true, true)}
+          disabled={isRefreshing}
+          className="p-2.5 rounded-xl bg-white border border-stone-200 hover:bg-stone-50 text-stone-700 shadow-3xs transition-all active:scale-95 cursor-pointer shrink-0 disabled:opacity-80"
           title="Refresh Analytics"
         >
-          <RefreshCw className="w-4 h-4 text-stone-600" />
+          <RefreshCw className={`w-4 h-4 text-stone-600 transition-transform ${isRefreshing ? 'animate-spin text-stone-900' : ''}`} />
         </button>
       </div>
 
       {/* Primary Analytics Tab Switchers */}
-      <div className="flex bg-stone-100 p-1 rounded-xl border border-stone-200 shadow-3xs">
+      <div className="grid grid-cols-3 bg-stone-100 p-1 rounded-xl border border-stone-200/80 gap-1 shadow-3xs">
         <button
           onClick={() => setActiveTab('OVERVIEW')}
-          className={`flex-1 py-2 text-xs font-black rounded-lg transition-all flex items-center justify-center gap-1.5 ${
-            activeTab === 'OVERVIEW' ? 'bg-white text-stone-900 shadow-xs' : 'text-stone-500 hover:text-stone-800'
+          className={`py-2 px-2 text-xs font-bold rounded-lg transition-all flex items-center justify-center gap-1.5 min-w-0 cursor-pointer ${
+            activeTab === 'OVERVIEW'
+              ? 'bg-white text-stone-900 shadow-xs'
+              : 'text-stone-500 hover:text-stone-800'
           }`}
         >
-          <BarChart3 className="w-3.5 h-3.5" />
-          Overview
+          <BarChart3 className="w-3.5 h-3.5 shrink-0" />
+          <span className="truncate">Overview</span>
         </button>
         <button
           onClick={() => setActiveTab('DISHES')}
-          className={`flex-1 py-2 text-xs font-black rounded-lg transition-all flex items-center justify-center gap-1.5 ${
-            activeTab === 'DISHES' ? 'bg-white text-stone-900 shadow-xs' : 'text-stone-500 hover:text-stone-800'
+          className={`py-2 px-2 text-xs font-bold rounded-lg transition-all flex items-center justify-center gap-1.5 min-w-0 cursor-pointer ${
+            activeTab === 'DISHES'
+              ? 'bg-white text-stone-900 shadow-xs'
+              : 'text-stone-500 hover:text-stone-800'
           }`}
         >
-          <Utensils className="w-3.5 h-3.5" />
-          Menu Insights
+          <Utensils className="w-3.5 h-3.5 shrink-0" />
+          <span className="truncate">Menu Insights</span>
         </button>
         <button
           onClick={() => setActiveTab('REVIEWS')}
-          className={`flex-1 py-2 text-xs font-black rounded-lg transition-all flex items-center justify-center gap-1.5 ${
-            activeTab === 'REVIEWS' ? 'bg-white text-stone-900 shadow-xs' : 'text-stone-500 hover:text-stone-800'
+          className={`py-2 px-2 text-xs font-bold rounded-lg transition-all flex items-center justify-center gap-1.5 min-w-0 cursor-pointer ${
+            activeTab === 'REVIEWS'
+              ? 'bg-white text-stone-900 shadow-xs'
+              : 'text-stone-500 hover:text-stone-800'
           }`}
         >
-          <Star className="w-3.5 h-3.5" />
-          Feedback
+          <Star className="w-3.5 h-3.5 shrink-0" />
+          <span className="truncate">Feedback</span>
         </button>
       </div>
 

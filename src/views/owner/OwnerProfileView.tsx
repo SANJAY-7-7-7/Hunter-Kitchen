@@ -382,86 +382,92 @@ export const OwnerProfileView: React.FC = () => {
   return (
     <div className="pb-28 md:pb-10 max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-4 sm:py-6 space-y-6">
       {/* Header Banner */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 bg-stone-900 text-white p-5 rounded-3xl shadow-xl relative overflow-hidden">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 bg-stone-900 text-white p-5 sm:p-6 rounded-3xl shadow-xl relative overflow-hidden">
         <div className="absolute -right-8 -bottom-8 w-36 h-36 bg-red-600/20 rounded-full blur-2xl pointer-events-none"></div>
-        <div className="flex items-center gap-3.5 z-10">
-          <div className="w-14 h-14 rounded-2xl bg-gradient-to-tr from-red-600 to-amber-500 text-white font-black text-2xl flex items-center justify-center shadow-lg shadow-red-600/30">
+        <div className="flex items-center gap-3.5 sm:gap-4 min-w-0 z-10">
+          <div className="w-13 h-13 sm:w-14 sm:h-14 rounded-2xl bg-gradient-to-tr from-red-600 to-amber-500 text-white font-black text-2xl flex items-center justify-center shadow-lg shadow-red-600/30 shrink-0">
             {currentUser?.name?.charAt(0).toUpperCase() || 'A'}
           </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <h2 className="text-xl font-black tracking-tight">{currentUser?.name || 'Administrator'}</h2>
-              <span className="px-2.5 py-0.5 rounded-full bg-amber-400 text-stone-950 font-black text-[10px] uppercase tracking-wider">
+          <div className="min-w-0 flex-1 space-y-1">
+            <div className="flex flex-wrap items-center gap-2">
+              <h2 className="text-lg sm:text-xl font-black tracking-tight text-white leading-tight truncate">{currentUser?.name || 'Administrator'}</h2>
+              <span className="px-2.5 py-0.5 rounded-full bg-amber-400 text-stone-950 font-black text-[10px] uppercase tracking-wider shrink-0 shadow-xs">
                 Super Admin
               </span>
             </div>
-            <p className="text-xs text-stone-400 mt-0.5 flex items-center gap-2">
-              <span>{currentUser?.email}</span> • <span>{currentUser?.phone}</span>
-            </p>
+            <div className="text-xs text-stone-300 flex flex-wrap items-center gap-x-3 gap-y-1 font-medium">
+              {currentUser?.email && (
+                <span className="flex items-center gap-1.5 min-w-0">
+                  <Mail className="w-3.5 h-3.5 text-stone-400 shrink-0" />
+                  <span className="break-all">{currentUser.email}</span>
+                </span>
+              )}
+              {currentUser?.phone && (
+                <span className="flex items-center gap-1.5 shrink-0">
+                  <Phone className="w-3.5 h-3.5 text-stone-400 shrink-0" />
+                  <span>{currentUser.phone}</span>
+                </span>
+              )}
+            </div>
           </div>
         </div>
 
         {/* Quick Sign Out Header Action */}
         <button
+          type="button"
           onClick={() => logout()}
-          className="z-10 self-start sm:self-center px-4 py-2 rounded-xl bg-white/10 hover:bg-red-600/80 text-white text-xs font-bold transition-all flex items-center gap-1.5 border border-white/10 cursor-pointer shadow-sm"
+          className="z-10 self-start sm:self-center px-4 py-2.5 rounded-2xl bg-white/10 hover:bg-red-600 text-white text-xs font-bold transition-all flex items-center gap-2 border border-white/10 cursor-pointer shadow-sm active:scale-95 shrink-0"
         >
-          <LogOut className="w-3.5 h-3.5" /> Sign Out
+          <LogOut className="w-3.5 h-3.5 shrink-0" />
+          <span>Sign Out</span>
         </button>
       </div>
 
       {/* SPECIAL ADMIN MASTER SETTING: SHOP OPEN / CLOSE CARD */}
       <div className={`rounded-3xl border-2 p-5 transition-all shadow-md ${
         isStoreOpen
-          ? 'bg-gradient-to-br from-emerald-50 via-white to-emerald-50/40 border-emerald-300'
-          : 'bg-gradient-to-br from-rose-50 via-white to-stone-50 border-rose-300'
+          ? 'bg-gradient-to-br from-emerald-50/80 via-white to-emerald-50/30 border-emerald-300'
+          : 'bg-gradient-to-br from-rose-50/80 via-white to-stone-50 border-rose-300'
       }`}>
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-          <div className="space-y-1">
+          <div className="space-y-1.5 min-w-0">
             <div className="flex items-center gap-2">
-              <span className="text-xs font-extrabold uppercase tracking-wider text-stone-500 flex items-center gap-1">
-                <Store className="w-4 h-4 text-stone-600" /> Master Kitchen & Online Ordering Control
+              <span className="text-[10px] font-black uppercase tracking-wider text-stone-500 flex items-center gap-1.5">
+                <Store className="w-3.5 h-3.5 text-stone-600 shrink-0" />
+                <span>Master Kitchen & Online Ordering Control</span>
               </span>
-              <span className={`w-2.5 h-2.5 rounded-full ${isStoreOpen ? 'bg-emerald-500 animate-ping' : 'bg-rose-500'}`}></span>
             </div>
 
-            <div className="flex items-center gap-3">
-              <h3 className="text-2xl font-black text-stone-900">
-                {isStoreOpen ? (
-                  <span className="text-emerald-800 flex items-center gap-2">
-                    🟢 Restaurant is OPEN
-                  </span>
-                ) : (
-                  <span className="text-rose-800 flex items-center gap-2">
-                    🔴 Restaurant is CLOSED
-                  </span>
-                )}
+            <div className="flex items-center gap-2.5">
+              <span className={`w-3 h-3 rounded-full shrink-0 ${isStoreOpen ? 'bg-emerald-500 shadow-sm shadow-emerald-500/50 animate-pulse' : 'bg-rose-500'}`}></span>
+              <h3 className={`text-xl sm:text-2xl font-black tracking-tight ${isStoreOpen ? 'text-emerald-900' : 'text-rose-900'}`}>
+                {isStoreOpen ? 'Restaurant is Open' : 'Restaurant is Closed'}
               </h3>
             </div>
 
-            <p className="text-xs text-stone-600 font-medium max-w-lg">
+            <p className="text-xs text-stone-600 font-medium max-w-lg leading-relaxed">
               {isStoreOpen
                 ? 'The store is live. Customers can browse the full menu, customize items, and place real-time delivery and takeaway orders.'
                 : 'Ordering is temporarily paused for all customers. Menu items will show as unavailable for checkout until re-opened.'}
             </p>
           </div>
 
-          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 shrink-0">
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:flex md:items-center gap-2.5 shrink-0 pt-2 md:pt-0 border-t md:border-t-0 border-stone-200/60">
             {/* Master Open/Close Toggle Button */}
             <button
               type="button"
               disabled={isTogglingStatus}
               onClick={handleToggleStoreStatus}
-              className={`px-5 py-3 rounded-2xl font-black text-sm flex items-center justify-center gap-2 shadow-lg transition-all active:scale-95 cursor-pointer ${
+              className={`px-5 py-3 rounded-2xl font-black text-xs sm:text-sm flex items-center justify-center gap-2 shadow-lg transition-all active:scale-95 cursor-pointer whitespace-nowrap ${
                 isStoreOpen
                   ? 'bg-rose-600 hover:bg-rose-700 text-white shadow-rose-600/25'
                   : 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-emerald-600/25'
               }`}
             >
               {isTogglingStatus ? (
-                <Loader2 className="w-5 h-5 animate-spin" />
+                <Loader2 className="w-4 h-4 animate-spin shrink-0" />
               ) : (
-                <Power className="w-5 h-5" />
+                <Power className="w-4 h-4 shrink-0" />
               )}
               <span>{isStoreOpen ? 'Close Shop Now' : 'Open Shop Now'}</span>
             </button>
@@ -471,14 +477,14 @@ export const OwnerProfileView: React.FC = () => {
               type="button"
               disabled={isTogglingStatus}
               onClick={handleToggleTemporaryPause}
-              className={`px-3.5 py-3 rounded-2xl font-bold text-xs flex items-center justify-center gap-1.5 border transition-all cursor-pointer ${
+              className={`px-4 py-3 rounded-2xl font-bold text-xs flex items-center justify-center gap-1.5 border transition-all cursor-pointer whitespace-nowrap ${
                 temporaryPause
                   ? 'bg-amber-500 text-white border-amber-600 shadow-sm'
                   : 'bg-white text-stone-700 border-stone-300 hover:bg-stone-50'
               }`}
               title="Pause new orders temporarily during kitchen rush"
             >
-              <Clock className="w-4 h-4" />
+              <Clock className="w-4 h-4 shrink-0" />
               <span>{temporaryPause ? 'Kitchen Paused (Resume)' : 'Pause Orders (Rush)'}</span>
             </button>
           </div>
@@ -493,38 +499,41 @@ export const OwnerProfileView: React.FC = () => {
       </div>
 
       {/* Navigation Sub-Tabs */}
-      <div className="flex bg-stone-100 p-1.5 rounded-2xl gap-1 border border-stone-200 text-xs font-bold">
+      <div className="flex overflow-x-auto no-scrollbar scroll-smooth gap-1.5 p-1.5 bg-stone-100 rounded-2xl border border-stone-200 shadow-2xs text-xs font-bold">
         <button
           onClick={() => setActiveTab('profile')}
-          className={`flex-1 py-2.5 px-3 rounded-xl flex items-center justify-center gap-2 transition-all cursor-pointer ${
+          className={`shrink-0 py-2.5 px-3.5 rounded-xl flex items-center gap-2 transition-all cursor-pointer whitespace-nowrap ${
             activeTab === 'profile'
-              ? 'bg-white text-stone-900 shadow-sm font-extrabold'
-              : 'text-stone-600 hover:text-stone-900'
+              ? 'bg-white text-stone-900 shadow-xs font-extrabold'
+              : 'text-stone-600 hover:text-stone-900 hover:bg-white/60'
           }`}
         >
-          <User className="w-4 h-4 text-red-600" /> Admin Profile & Alerts
+          <User className="w-4 h-4 text-red-600 shrink-0" />
+          <span>Admin Profile & Alerts</span>
         </button>
 
         <button
           onClick={() => setActiveTab('store_settings')}
-          className={`flex-1 py-2.5 px-3 rounded-xl flex items-center justify-center gap-2 transition-all cursor-pointer ${
+          className={`shrink-0 py-2.5 px-3.5 rounded-xl flex items-center gap-2 transition-all cursor-pointer whitespace-nowrap ${
             activeTab === 'store_settings'
-              ? 'bg-white text-stone-900 shadow-sm font-extrabold'
-              : 'text-stone-600 hover:text-stone-900'
+              ? 'bg-white text-stone-900 shadow-xs font-extrabold'
+              : 'text-stone-600 hover:text-stone-900 hover:bg-white/60'
           }`}
         >
-          <Store className="w-4 h-4 text-amber-600" /> Store Configuration
+          <Store className="w-4 h-4 text-amber-600 shrink-0" />
+          <span>Store Configuration</span>
         </button>
 
         <button
           onClick={() => setActiveTab('audit_logs')}
-          className={`flex-1 py-2.5 px-3 rounded-xl flex items-center justify-center gap-2 transition-all cursor-pointer ${
+          className={`shrink-0 py-2.5 px-3.5 rounded-xl flex items-center gap-2 transition-all cursor-pointer whitespace-nowrap ${
             activeTab === 'audit_logs'
-              ? 'bg-white text-stone-900 shadow-sm font-extrabold'
-              : 'text-stone-600 hover:text-stone-900'
+              ? 'bg-white text-stone-900 shadow-xs font-extrabold'
+              : 'text-stone-600 hover:text-stone-900 hover:bg-white/60'
           }`}
         >
-          <ClipboardList className="w-4 h-4 text-emerald-600" /> Staff & Delivery Activity Log
+          <ClipboardList className="w-4 h-4 text-emerald-600 shrink-0" />
+          <span>Staff & Delivery Activity Log</span>
         </button>
       </div>
 
@@ -714,14 +723,14 @@ export const OwnerProfileView: React.FC = () => {
                 </div>
               </form>
             ) : (
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs">
                 <div className="p-3.5 bg-stone-50 rounded-2xl border border-stone-200/80">
                   <span className="text-[10px] font-bold text-stone-400 block uppercase tracking-wider mb-1">
                     Receiver / Admin Name
                   </span>
-                  <p className="font-extrabold text-stone-900 text-sm flex items-center gap-1.5">
-                    <User className="w-3.5 h-3.5 text-red-600" />
-                    {currentUser?.name}
+                  <p className="font-extrabold text-stone-900 text-sm flex items-center gap-2">
+                    <User className="w-4 h-4 text-red-600 shrink-0" />
+                    <span>{currentUser?.name || "Hunter's Kitchen"}</span>
                   </p>
                 </div>
 
@@ -729,9 +738,9 @@ export const OwnerProfileView: React.FC = () => {
                   <span className="text-[10px] font-bold text-stone-400 block uppercase tracking-wider mb-1">
                     Gmail / Email Address
                   </span>
-                  <p className="font-extrabold text-stone-900 text-sm flex items-center gap-1.5 truncate">
-                    <Mail className="w-3.5 h-3.5 text-blue-600 shrink-0" />
-                    <span className="truncate">{currentUser?.email}</span>
+                  <p className="font-extrabold text-stone-900 text-xs sm:text-sm flex items-center gap-2 break-all">
+                    <Mail className="w-4 h-4 text-blue-600 shrink-0" />
+                    <span className="break-all">{currentUser?.email}</span>
                   </p>
                 </div>
 
@@ -739,9 +748,9 @@ export const OwnerProfileView: React.FC = () => {
                   <span className="text-[10px] font-bold text-stone-400 block uppercase tracking-wider mb-1">
                     Phone Number
                   </span>
-                  <p className="font-extrabold text-stone-900 text-sm flex items-center gap-1.5">
-                    <Phone className="w-3.5 h-3.5 text-emerald-600" />
-                    {currentUser?.phone}
+                  <p className="font-extrabold text-stone-900 text-sm flex items-center gap-2">
+                    <Phone className="w-4 h-4 text-emerald-600 shrink-0" />
+                    <span>{currentUser?.phone}</span>
                   </p>
                 </div>
               </div>
@@ -749,25 +758,26 @@ export const OwnerProfileView: React.FC = () => {
           </div>
 
           {/* NOTIFICATION SETTINGS */}
-          <div className="bg-white rounded-3xl border border-stone-200 p-5 shadow-xs space-y-4">
+          <div className="bg-white rounded-3xl border border-stone-200 p-5 sm:p-6 shadow-xs space-y-4">
             <div>
               <h4 className="font-extrabold text-sm text-stone-900 flex items-center gap-2">
-                <Bell className="w-4 h-4 text-red-600" /> Notification & Alert Preferences
+                <Bell className="w-4 h-4 text-red-600 shrink-0" />
+                <span>Notification & Alert Preferences</span>
               </h4>
-              <p className="text-xs text-stone-500 font-medium">Control audio alerts and push notifications for high-priority restaurant events</p>
+              <p className="text-xs text-stone-500 font-medium mt-0.5">Control audio alerts and push notifications for high-priority restaurant events</p>
             </div>
 
             <div className="space-y-3 pt-1">
               {/* Web Push Notification */}
-              <div className="p-3.5 bg-stone-50 rounded-2xl border border-stone-200 flex items-center justify-between gap-3">
-                <div className="space-y-0.5">
-                  <span className="font-bold text-stone-900 text-xs flex items-center gap-1.5">
+              <div className="p-4 bg-stone-50 hover:bg-stone-50/80 rounded-2xl border border-stone-200 flex items-center justify-between gap-4 transition-colors">
+                <div className="space-y-0.5 min-w-0 flex-1">
+                  <div className="font-bold text-stone-900 text-xs flex flex-wrap items-center gap-2">
                     <span>Web Push Alerts</span>
                     {webPushPermission === 'granted' && isPushAlertsEnabled && (
-                      <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-extrabold">Active</span>
+                      <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-extrabold shrink-0">Active</span>
                     )}
-                  </span>
-                  <p className="text-[11px] text-stone-500">Receive instant desktop/mobile notification when a new order arrives</p>
+                  </div>
+                  <p className="text-[11px] text-stone-500 leading-relaxed">Receive instant desktop/mobile notification when a new order arrives</p>
                 </div>
 
                 <button
@@ -779,7 +789,7 @@ export const OwnerProfileView: React.FC = () => {
                       togglePushAlerts();
                     }
                   }}
-                  className={`px-3 py-1.5 rounded-xl font-bold text-xs transition-colors cursor-pointer ${
+                  className={`px-4 py-2 rounded-xl font-bold text-xs transition-all cursor-pointer shrink-0 shadow-xs active:scale-95 ${
                     webPushPermission === 'granted' && isPushAlertsEnabled
                       ? 'bg-emerald-600 text-white hover:bg-emerald-700'
                       : 'bg-stone-200 text-stone-700 hover:bg-stone-300'
@@ -790,79 +800,83 @@ export const OwnerProfileView: React.FC = () => {
               </div>
 
               {/* Order Ringtone / Audio Alert */}
-              <div className="p-3.5 bg-stone-50 rounded-2xl border border-stone-200 flex items-center justify-between gap-3">
-                <div className="space-y-0.5">
-                  <span className="font-bold text-stone-900 text-xs flex items-center gap-1.5">
-                    {orderAudioAlerts ? <Volume2 className="w-4 h-4 text-emerald-600" /> : <VolumeX className="w-4 h-4 text-stone-400" />}
+              <div className="p-4 bg-stone-50 hover:bg-stone-50/80 rounded-2xl border border-stone-200 flex items-center justify-between gap-4 transition-colors">
+                <div className="space-y-0.5 min-w-0 flex-1">
+                  <div className="font-bold text-stone-900 text-xs flex items-center gap-1.5">
+                    {orderAudioAlerts ? <Volume2 className="w-4 h-4 text-emerald-600 shrink-0" /> : <VolumeX className="w-4 h-4 text-stone-400 shrink-0" />}
                     <span>Kitchen Bell & Order Sound</span>
-                  </span>
-                  <p className="text-[11px] text-stone-500">Play continuous audio chime when new orders enter the kitchen dispatch</p>
+                  </div>
+                  <p className="text-[11px] text-stone-500 leading-relaxed">Play continuous audio chime when new orders enter the kitchen dispatch</p>
                 </div>
 
                 <button
                   type="button"
+                  role="switch"
+                  aria-checked={orderAudioAlerts}
                   onClick={() => setOrderAudioAlerts(!orderAudioAlerts)}
-                  className={`w-12 h-6 flex items-center rounded-full p-1 transition-colors cursor-pointer ${
-                    orderAudioAlerts ? 'bg-red-600 justify-end' : 'bg-stone-300 justify-start'
+                  className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ring-2 ring-stone-900/5 ${
+                    orderAudioAlerts ? 'bg-red-600' : 'bg-stone-300'
                   }`}
                 >
-                  <div className="w-4 h-4 bg-white rounded-full shadow-md"></div>
+                  <span
+                    aria-hidden="true"
+                    className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-md ring-0 transition duration-200 ease-in-out ${
+                      orderAudioAlerts ? 'translate-x-5' : 'translate-x-0'
+                    }`}
+                  />
                 </button>
               </div>
 
               {/* SMS & Critical Alerts */}
-              <div className="p-3.5 bg-stone-50 rounded-2xl border border-stone-200 flex items-center justify-between gap-3">
-                <div className="space-y-0.5">
-                  <span className="font-bold text-stone-900 text-xs">SMS & WhatsApp Critical Dispatch Alerts</span>
-                  <p className="text-[11px] text-stone-500">Send urgent fallback SMS when delivery drivers do not accept orders within 5 mins</p>
+              <div className="p-4 bg-stone-50 hover:bg-stone-50/80 rounded-2xl border border-stone-200 flex items-center justify-between gap-4 transition-colors">
+                <div className="space-y-0.5 min-w-0 flex-1">
+                  <div className="font-bold text-stone-900 text-xs">SMS & WhatsApp Critical Dispatch Alerts</div>
+                  <p className="text-[11px] text-stone-500 leading-relaxed">Send urgent fallback SMS when delivery drivers do not accept orders within 5 mins</p>
                 </div>
 
                 <button
                   type="button"
+                  role="switch"
+                  aria-checked={smsCriticalAlerts}
                   onClick={() => setSmsCriticalAlerts(!smsCriticalAlerts)}
-                  className={`w-12 h-6 flex items-center rounded-full p-1 transition-colors cursor-pointer ${
-                    smsCriticalAlerts ? 'bg-red-600 justify-end' : 'bg-stone-300 justify-start'
+                  className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ring-2 ring-stone-900/5 ${
+                    smsCriticalAlerts ? 'bg-red-600' : 'bg-stone-300'
                   }`}
                 >
-                  <div className="w-4 h-4 bg-white rounded-full shadow-md"></div>
+                  <span
+                    aria-hidden="true"
+                    className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-md ring-0 transition duration-200 ease-in-out ${
+                      smsCriticalAlerts ? 'translate-x-5' : 'translate-x-0'
+                    }`}
+                  />
                 </button>
               </div>
 
               {/* Daily Revenue Email Summary */}
-              <div className="p-3.5 bg-stone-50 rounded-2xl border border-stone-200 flex items-center justify-between gap-3">
-                <div className="space-y-0.5">
-                  <span className="font-bold text-stone-900 text-xs">Daily Midnight Revenue Summary Email</span>
-                  <p className="text-[11px] text-stone-500">Send automated financial ledger and order breakdown to {currentUser?.email}</p>
+              <div className="p-4 bg-stone-50 hover:bg-stone-50/80 rounded-2xl border border-stone-200 flex items-center justify-between gap-4 transition-colors">
+                <div className="space-y-0.5 min-w-0 flex-1">
+                  <div className="font-bold text-stone-900 text-xs">Daily Midnight Revenue Summary Email</div>
+                  <p className="text-[11px] text-stone-500 leading-relaxed break-all">Send automated financial ledger and order breakdown to {currentUser?.email}</p>
                 </div>
 
                 <button
                   type="button"
+                  role="switch"
+                  aria-checked={emailDigestAlerts}
                   onClick={() => setEmailDigestAlerts(!emailDigestAlerts)}
-                  className={`w-12 h-6 flex items-center rounded-full p-1 transition-colors cursor-pointer ${
-                    emailDigestAlerts ? 'bg-red-600 justify-end' : 'bg-stone-300 justify-start'
+                  className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ring-2 ring-stone-900/5 ${
+                    emailDigestAlerts ? 'bg-red-600' : 'bg-stone-300'
                   }`}
                 >
-                  <div className="w-4 h-4 bg-white rounded-full shadow-md"></div>
+                  <span
+                    aria-hidden="true"
+                    className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-md ring-0 transition duration-200 ease-in-out ${
+                      emailDigestAlerts ? 'translate-x-5' : 'translate-x-0'
+                    }`}
+                  />
                 </button>
               </div>
             </div>
-          </div>
-
-          {/* SIGN OUT ACTION */}
-          <div className="bg-white rounded-3xl border border-stone-200 p-5 shadow-xs flex flex-col sm:flex-row items-center justify-between gap-3">
-            <div>
-              <h4 className="font-extrabold text-sm text-stone-900">Session Management</h4>
-              <p className="text-xs text-stone-500 font-medium">Terminate current administrator access session on this device</p>
-            </div>
-
-            <button
-              type="button"
-              onClick={() => logout()}
-              className="w-full sm:w-auto px-6 py-3 rounded-2xl bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 font-black text-xs flex items-center justify-center gap-2 transition-all cursor-pointer shadow-xs active:scale-95"
-            >
-              <LogOut className="w-4 h-4 text-red-600" />
-              <span>Sign Out of Admin Account</span>
-            </button>
           </div>
         </div>
       )}

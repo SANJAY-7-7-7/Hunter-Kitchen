@@ -39,6 +39,7 @@ export const OwnerOrdersView: React.FC<OwnerOrdersViewProps> = ({ initialStatusF
     }
   }, [initialStatusFilter]);
   const [isLoading, setIsLoading] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
   // Reject Modal State
   const [rejectOrderId, setRejectOrderId] = useState<string | null>(null);
@@ -52,7 +53,8 @@ export const OwnerOrdersView: React.FC<OwnerOrdersViewProps> = ({ initialStatusF
   const { addNotification } = useNotification();
   const [assigningOrderId, setAssigningOrderId] = useState<string | null>(null);
 
-  const loadData = async () => {
+  const loadData = async (manual = false) => {
+    if (manual) setIsRefreshing(true);
     try {
       const [ordersData, driversData, staffData] = await Promise.all([
         apiService.getOrders({ role: 'OWNER' }),
@@ -76,6 +78,9 @@ export const OwnerOrdersView: React.FC<OwnerOrdersViewProps> = ({ initialStatusF
       console.error(err);
     } finally {
       setIsLoading(false);
+      if (manual) {
+        setTimeout(() => setIsRefreshing(false), 600);
+      }
     }
   };
 
@@ -110,8 +115,17 @@ export const OwnerOrdersView: React.FC<OwnerOrdersViewProps> = ({ initialStatusF
 
   useEffect(() => {
     loadData();
-    const interval = setInterval(loadData, 4000);
-    return () => clearInterval(interval);
+    const interval = setInterval(loadData, 3000);
+
+    const handleOrderUpdate = () => {
+      loadData();
+    };
+    window.addEventListener('hk:order_update', handleOrderUpdate);
+
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('hk:order_update', handleOrderUpdate);
+    };
   }, []);
 
   const handleAccept = async (orderId: string) => {
@@ -190,7 +204,15 @@ export const OwnerOrdersView: React.FC<OwnerOrdersViewProps> = ({ initialStatusF
 
   // Filter orders
   const filteredOrders = orders.filter((o) => {
-    if (statusFilter !== 'ALL' && o.status !== statusFilter) return false;
+    if (statusFilter !== 'ALL') {
+      if (statusFilter === 'PREPARING') {
+        if (o.status !== 'PREPARING' && o.status !== 'ACCEPTED') return false;
+      } else if (statusFilter === 'OUT_FOR_DELIVERY') {
+        if (o.status !== 'OUT_FOR_DELIVERY' && o.status !== 'PICKED_UP' && o.status !== 'ASSIGNED') return false;
+      } else {
+        if (o.status !== statusFilter) return false;
+      }
+    }
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
       return (
@@ -210,10 +232,12 @@ export const OwnerOrdersView: React.FC<OwnerOrdersViewProps> = ({ initialStatusF
       <div className="flex items-center justify-between">
         <h2 className="text-lg font-black text-stone-900">Live Order Dispatch Board</h2>
         <button
-          onClick={loadData}
-          className="p-2 rounded-xl bg-stone-100 hover:bg-stone-200 text-stone-700 transition-colors"
+          onClick={() => loadData(true)}
+          disabled={isRefreshing}
+          className="p-2 rounded-xl bg-stone-100 hover:bg-stone-200 text-stone-700 transition-all active:scale-95 cursor-pointer disabled:opacity-80"
+          title="Refresh Orders"
         >
-          <RefreshCw className="w-4 h-4" />
+          <RefreshCw className={`w-4 h-4 transition-transform ${isRefreshing ? 'animate-spin text-stone-900' : ''}`} />
         </button>
       </div>
 
@@ -250,7 +274,7 @@ export const OwnerOrdersView: React.FC<OwnerOrdersViewProps> = ({ initialStatusF
       </div>
 
       {/* Status Filter Chips */}
-      <div className="flex gap-2 overflow-x-auto no-scrollbar py-1">
+      <div className="flex gap-1.5 sm:gap-2 overflow-x-auto no-scrollbar scroll-smooth py-1">
         {['ALL', 'PLACED', 'ACCEPTED', 'PREPARING', 'READY', 'ASSIGNED', 'OUT_FOR_DELIVERY', 'DELIVERED', 'CANCELLED'].map(
           (st) => {
             const isSelected = statusFilter === st;
@@ -258,10 +282,10 @@ export const OwnerOrdersView: React.FC<OwnerOrdersViewProps> = ({ initialStatusF
               <button
                 key={st}
                 onClick={() => setStatusFilter(st)}
-                className={`px-3 py-1.5 rounded-xl text-[11px] font-extrabold whitespace-nowrap transition-all border ${
+                className={`px-3.5 py-1.5 rounded-xl text-xs font-black whitespace-nowrap shrink-0 transition-all border cursor-pointer select-none ${
                   isSelected
                     ? 'bg-stone-900 text-white border-stone-900 shadow-2xs'
-                    : 'bg-white text-stone-600 border-stone-200 hover:bg-stone-100'
+                    : 'bg-white text-stone-600 border-stone-200 hover:bg-stone-100 hover:text-stone-900'
                 }`}
               >
                 {st.replace(/_/g, ' ')}
@@ -301,63 +325,49 @@ export const OwnerOrdersView: React.FC<OwnerOrdersViewProps> = ({ initialStatusF
                   : 'border-stone-200'
               }`}
             >
-              {/* Order Header */}
-              <div className="flex items-start justify-between pb-2 border-b border-stone-100">
-                <div>
-                  <div className="flex items-center gap-2">
-                    <span className="font-extrabold text-sm text-stone-900">#{ord.orderNumber}</span>
-                    <span
-                      className={`text-[9px] font-black uppercase px-2 py-0.5 rounded-full ${
-                        ord.paymentMethod === 'ONLINE' ? 'bg-blue-100 text-blue-800' : 'bg-amber-100 text-amber-900'
-                      }`}
-                    >
-                      {ord.paymentMethod}
-                    </span>
-                  </div>
-                  <p className="text-xs font-semibold text-stone-700 mt-0.5">
-                    {ord.customerName} • {ord.customerPhone}
-                  </p>
-                  {(() => {
-                    const partner = getPartnerInfo(ord);
-                    if (!partner || !['ASSIGNED', 'PICKED_UP', 'OUT_FOR_DELIVERY', 'DELIVERED'].includes(ord.status)) return null;
-                    return (
-                      <div className="mt-1 inline-flex items-center gap-1.5 bg-blue-50 text-blue-900 text-[10px] font-extrabold px-2 py-0.5 rounded-full border border-blue-200/80 shadow-3xs">
-                        <span className="flex items-center gap-1 text-blue-950">🛵 Partner: {partner.name}</span>
-                        {partner.phone && (
-                          <a 
-                            href={`tel:${partner.phone}`}
-                            className="p-0.5 bg-emerald-100 text-emerald-800 rounded-full hover:bg-emerald-200 transition-colors flex items-center justify-center ml-0.5"
-                            title={`Call Partner ${partner.name}`}
-                          >
-                            <Phone className="w-2.5 h-2.5 stroke-[3]" />
-                          </a>
-                        )}
-                      </div>
-                    );
-                  })()}
-                  <p className="text-[11px] text-stone-500">
-                    {ord.deliveryAddress
-                      ? `${ord.deliveryAddress.doorNo ? `${ord.deliveryAddress.doorNo}, ` : ''}${ord.deliveryAddress.street || ''}, ${ord.deliveryAddress.area || ''}`
-                      : 'Store Pickup / Counter'}
-                  </p>
-                </div>
-
-                <div className="text-right flex flex-col items-end">
+              {/* Order Header: ID, Status, Payment Type & Timestamp */}
+              <div className="pb-3 border-b border-stone-100 space-y-2">
+                {/* Row 1: Order ID & Status Badge */}
+                <div className="flex items-center justify-between gap-2">
+                  <span className="font-mono font-black text-sm sm:text-base text-stone-900 tracking-tight">
+                    #{ord.orderNumber}
+                  </span>
                   <span
-                    className={`text-[10px] font-black uppercase px-2.5 py-1 rounded-full ${
+                    className={`text-[10px] font-black uppercase px-2.5 py-1 rounded-full whitespace-nowrap border shadow-3xs ${
                       ord.status === 'PLACED'
-                        ? 'bg-amber-500 text-stone-950 font-black animate-pulse'
+                        ? 'bg-amber-400 text-stone-950 border-amber-500 animate-pulse'
+                        : ord.status === 'ACCEPTED'
+                        ? 'bg-blue-50 text-blue-800 border-blue-200'
+                        : ord.status === 'PREPARING'
+                        ? 'bg-amber-50 text-amber-900 border-amber-200'
+                        : ord.status === 'READY'
+                        ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                        : ord.status === 'ASSIGNED' || ord.status === 'PICKED_UP' || ord.status === 'OUT_FOR_DELIVERY'
+                        ? 'bg-indigo-50 text-indigo-800 border-indigo-200'
                         : ord.status === 'DELIVERED'
-                        ? 'bg-emerald-100 text-emerald-800'
+                        ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
                         : ord.status === 'CANCELLED' || ord.status === 'REJECTED'
-                        ? 'bg-red-100 text-red-800'
-                        : 'bg-stone-200 text-stone-800'
+                        ? 'bg-red-50 text-red-800 border-red-200'
+                        : 'bg-stone-100 text-stone-800 border-stone-200'
                     }`}
                   >
                     {ord.status.replace(/_/g, ' ')}
                   </span>
-                  <div className="flex items-center gap-1 text-xs font-bold text-stone-900 mt-1 bg-stone-100 px-2 py-0.5 rounded-md border border-stone-200/80 shadow-3xs">
-                    <Clock className="w-3 h-3 text-stone-700" />
+                </div>
+
+                {/* Row 2: Payment Method Badge & Time */}
+                <div className="flex items-center justify-between gap-2 text-xs">
+                  <span
+                    className={`text-[10px] font-black uppercase px-2 py-0.5 rounded-md border ${
+                      ord.paymentMethod === 'ONLINE'
+                        ? 'bg-blue-50 text-blue-700 border-blue-200'
+                        : 'bg-amber-50 text-amber-800 border-amber-200'
+                    }`}
+                  >
+                    {ord.paymentMethod === 'ONLINE' ? 'Paid Online' : 'Cash on Delivery'}
+                  </span>
+                  <div className="flex items-center gap-1 text-[11px] font-semibold text-stone-500">
+                    <Clock className="w-3.5 h-3.5 text-stone-400 shrink-0" />
                     <span>
                       {new Date(ord.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                     </span>
@@ -365,142 +375,187 @@ export const OwnerOrdersView: React.FC<OwnerOrdersViewProps> = ({ initialStatusF
                 </div>
               </div>
 
+              {/* Customer Info & Address */}
+              <div className="space-y-1 text-xs">
+                <div className="flex items-center justify-between gap-2">
+                  <p className="font-bold text-stone-900 truncate">
+                    {ord.customerName}
+                  </p>
+                  <a
+                    href={`tel:${ord.customerPhone}`}
+                    className="text-stone-600 hover:text-stone-900 font-semibold shrink-0 flex items-center gap-1 hover:underline text-[11px]"
+                  >
+                    <Phone className="w-3 h-3 text-stone-400" />
+                    <span>{ord.customerPhone}</span>
+                  </a>
+                </div>
+
+                <p className="text-[11px] text-stone-500 leading-relaxed">
+                  {ord.deliveryAddress
+                    ? `${ord.deliveryAddress.doorNo ? `${ord.deliveryAddress.doorNo}, ` : ''}${ord.deliveryAddress.street || ''}${ord.deliveryAddress.area ? `, ${ord.deliveryAddress.area}` : ''}`
+                    : 'Store Pickup / Counter'}
+                </p>
+              </div>
+
               {/* Items List */}
-              <div className="space-y-1.5 text-xs text-stone-800">
+              <div className="bg-stone-50/70 rounded-xl p-3 border border-stone-100 space-y-1.5 text-xs text-stone-800">
                 {(ord.items || []).map((item, idx) => (
-                  <div key={idx} className="flex justify-between items-start">
-                    <div>
-                      <span className="font-bold text-stone-900">
-                        {item.quantity}x {item.name}
-                      </span>
+                  <div key={idx} className="flex justify-between items-start gap-2">
+                    <div className="min-w-0 flex-1">
+                      <p className="font-bold text-stone-900 truncate">
+                        <span className="text-red-700 font-black">{item.quantity}x</span> {item.name}
+                      </p>
                       {item.customizations && item.customizations.map((c, i) => (
-                        <span key={i} className="text-[11px] text-stone-500 block">
+                        <p key={i} className="text-[11px] text-stone-500 pl-4">
                           • {c.optionName}: {c.selectedLabel}
-                        </span>
+                        </p>
                       ))}
                       {item.addons && item.addons.map((a, i) => (
-                        <span key={i} className="text-[11px] text-stone-500 block">
+                        <p key={i} className="text-[11px] text-stone-500 pl-4">
                           + {a.name}
-                        </span>
+                        </p>
                       ))}
                     </div>
-                    <span className="font-bold text-stone-900">₹{item.totalPrice}</span>
+                    <span className="font-bold text-stone-900 font-mono shrink-0">₹{item.totalPrice}</span>
                   </div>
                 ))}
               </div>
 
               {/* Special Instructions Note */}
               {ord.orderNotes && (
-                <div className="p-2 bg-amber-50 border border-amber-200/80 rounded-xl text-xs text-amber-900">
-                  <span className="font-bold">Customer Notes:</span> {ord.orderNotes}
+                <div className="p-2.5 bg-amber-50/80 border border-amber-200/70 rounded-xl text-xs text-amber-950">
+                  <span className="font-bold text-amber-900">Customer Note:</span> {ord.orderNotes}
                 </div>
               )}
 
-              {/* Cash on Delivery Change Evaluation Box */}
+              {/* Cash on Delivery Breakdown Box */}
               {ord.paymentMethod === 'COD' && (
-                <div className="p-2.5 bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-300/80 rounded-xl text-xs text-stone-900 flex items-center justify-between gap-2 shadow-2xs">
-                  <div className="flex items-center gap-2">
-                    <div className="p-1.5 rounded-lg bg-amber-500 text-stone-950 font-black shrink-0">
+                <div className="p-3 bg-amber-50/60 border border-amber-200/80 rounded-xl text-xs flex items-center justify-between gap-3 shadow-3xs">
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <div className="w-8 h-8 rounded-lg bg-amber-500 text-stone-950 flex items-center justify-center font-black shrink-0 shadow-3xs">
                       <Banknote className="w-4 h-4" />
                     </div>
-                    <div>
-                      <p className="font-extrabold text-xs text-stone-900">Cash on Delivery</p>
-                      <p className="text-[11px] text-stone-600 font-medium">
-                        Customer Cash Note: <span className="font-bold text-stone-900">₹{ord.codCashTendered || ord.grandTotal}</span>
+                    <div className="min-w-0">
+                      <p className="font-extrabold text-xs text-stone-900 leading-tight">Cash on Delivery</p>
+                      <p className="text-[11px] text-stone-600 font-medium truncate mt-0.5">
+                        Tendered: <strong className="text-stone-900 font-mono font-bold">₹{ord.codCashTendered || ord.grandTotal}</strong>
                       </p>
                     </div>
                   </div>
-                  <div className="text-right">
-                    <span className="text-[10px] uppercase font-black text-stone-500 block">Change Required</span>
-                    <span className="font-black text-xs text-emerald-800 bg-emerald-100 px-2.5 py-0.5 rounded-full inline-block border border-emerald-200">
+                  <div className="text-right shrink-0">
+                    <span className="text-[9px] uppercase font-extrabold text-stone-500 block tracking-wider">Change Due</span>
+                    <span className="font-mono font-black text-xs text-emerald-800 bg-emerald-100/90 px-2.5 py-0.5 rounded-md inline-block border border-emerald-200/80 mt-0.5 shadow-3xs">
                       {ord.codChangeDue && ord.codChangeDue > 0 ? `₹${ord.codChangeDue}` : 'Exact Cash'}
                     </span>
                   </div>
                 </div>
               )}
 
-              {/* Price & Action Buttons */}
-              <div className="pt-2 border-t border-stone-100 flex items-center justify-between gap-2">
-                <span className="font-black text-sm text-stone-900">Grand Total: ₹{ord.grandTotal}</span>
+              {/* Footer: Grand Total & Actions */}
+              <div className="pt-3 border-t border-stone-100 space-y-2.5">
+                <div className="flex items-center justify-between gap-2.5">
+                  <div>
+                    <span className="text-[10px] uppercase font-bold text-stone-400 block tracking-wider">Grand Total</span>
+                    <span className="font-mono font-black text-base sm:text-lg text-stone-900">
+                      ₹{ord.grandTotal}
+                    </span>
+                  </div>
 
-                {/* State Machine Action Controls */}
-                <div className="flex items-center gap-1.5">
-                  {ord.status === 'PLACED' && (
-                    <>
+                  {/* Primary Action Button or Dropdown Controls */}
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    {ord.status === 'PLACED' && (
+                      <>
+                        <button
+                          onClick={() => setRejectOrderId(ord.id)}
+                          className="px-3 py-1.5 rounded-xl border border-red-200 text-red-700 bg-red-50 hover:bg-red-100 text-xs font-bold cursor-pointer transition-colors"
+                        >
+                          Reject
+                        </button>
+                        <button
+                          onClick={() => handleAccept(ord.id)}
+                          className="px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-xs flex items-center gap-1 cursor-pointer transition-colors"
+                        >
+                          <Check className="w-3.5 h-3.5" /> Accept
+                        </button>
+                      </>
+                    )}
+
+                    {ord.status === 'ACCEPTED' && (
                       <button
-                        onClick={() => setRejectOrderId(ord.id)}
-                        className="px-3 py-1.5 rounded-xl border border-red-200 text-red-700 bg-red-50 hover:bg-red-100 text-xs font-bold"
+                        onClick={() => handlePrepare(ord.id)}
+                        className="px-3.5 py-1.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold flex items-center gap-1 shadow-xs cursor-pointer transition-colors"
                       >
-                        Reject
+                        <Utensils className="w-3.5 h-3.5" /> Start Preparing
                       </button>
+                    )}
+
+                    {ord.status === 'PREPARING' && (
                       <button
-                        onClick={() => handleAccept(ord.id)}
-                        className="px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-xs flex items-center gap-1"
+                        onClick={() => setReadyOrderId(ord.id)}
+                        className="px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold flex items-center gap-1 shadow-xs cursor-pointer transition-colors"
                       >
-                        <Check className="w-3.5 h-3.5" /> Accept
+                        <CheckCircle2 className="w-3.5 h-3.5" /> Mark Ready
                       </button>
-                    </>
-                  )}
+                    )}
 
-                  {ord.status === 'ACCEPTED' && (
-                    <button
-                      onClick={() => handlePrepare(ord.id)}
-                      className="px-3 py-1.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold flex items-center gap-1 shadow-xs"
-                    >
-                      <Utensils className="w-3.5 h-3.5" /> Start Preparing
-                    </button>
-                  )}
-
-                  {ord.status === 'PREPARING' && (
-                    <button
-                      onClick={() => setReadyOrderId(ord.id)}
-                      className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold flex items-center gap-1 shadow-xs"
-                    >
-                      <CheckCircle2 className="w-3.5 h-3.5" /> Mark Ready
-                    </button>
-                  )}
-
-                  {ord.status === 'READY' && (
-                    <div className="flex items-center gap-1">
-                      {deliveryPartners.length === 0 ? (
-                        <span className="text-xs text-rose-600 font-bold bg-rose-50 border border-rose-100 px-3 py-1.5 rounded-xl flex items-center gap-1">
-                          No delivery partner
-                        </span>
-                      ) : (
-                        <PartnerAssignDropdown
-                          orderId={ord.id}
-                          deliveryPartners={deliveryPartners}
-                          isAssigning={assigningOrderId === ord.id}
-                          onSelect={handleSingleAssign}
-                          variant="assign"
-                        />
-                      )}
-                    </div>
-                  )}
-
-                  {ord.status === 'ASSIGNED' && (() => {
-                    const partner = getPartnerInfo(ord);
-                    const isAssigning = assigningOrderId === ord.id;
-                    return (
-                      <div className="flex items-center gap-1.5 flex-wrap">
-                        <span className="text-xs text-blue-900 font-bold bg-blue-50 border border-blue-200 px-2.5 py-1 rounded-xl inline-flex items-center gap-1 shadow-3xs">
-                          <Bike className="w-3.5 h-3.5 text-blue-700" />
-                          <span>Assigned to <strong className="font-extrabold text-blue-950">{partner?.name || 'Delivery Partner'}</strong></span>
-                        </span>
-                        {deliveryPartners.length > 0 && (
+                    {ord.status === 'READY' && (
+                      <div className="flex items-center gap-1">
+                        {deliveryPartners.length === 0 ? (
+                          <span className="text-xs text-rose-600 font-bold bg-rose-50 border border-rose-100 px-3 py-1.5 rounded-xl flex items-center gap-1">
+                            No delivery partner
+                          </span>
+                        ) : (
                           <PartnerAssignDropdown
                             orderId={ord.id}
-                            currentPartnerId={ord.assignedDeliveryPartnerId}
                             deliveryPartners={deliveryPartners}
-                            isAssigning={isAssigning}
+                            isAssigning={assigningOrderId === ord.id}
                             onSelect={handleSingleAssign}
-                            variant="reassign"
+                            variant="assign"
                           />
                         )}
                       </div>
-                    );
-                  })()}
+                    )}
+
+                    {ord.status === 'ASSIGNED' && (
+                      <PartnerAssignDropdown
+                        orderId={ord.id}
+                        currentPartnerId={ord.assignedDeliveryPartnerId}
+                        deliveryPartners={deliveryPartners}
+                        isAssigning={assigningOrderId === ord.id}
+                        onSelect={handleSingleAssign}
+                        variant="reassign"
+                      />
+                    )}
+                  </div>
                 </div>
+
+                {/* Dedicated Rider Banner (Shown when assigned, on the way, etc.) */}
+                {['ASSIGNED', 'PICKED_UP', 'OUT_FOR_DELIVERY', 'DELIVERED'].includes(ord.status) && (() => {
+                  const partner = getPartnerInfo(ord);
+                  if (!partner) return null;
+                  return (
+                    <div className="flex items-center justify-between gap-2 p-2 px-2.5 bg-blue-50/80 border border-blue-200/70 rounded-xl text-xs shadow-3xs">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <div className="w-6 h-6 rounded-lg bg-blue-600 text-white flex items-center justify-center shrink-0 text-[11px] font-bold">
+                          🛵
+                        </div>
+                        <p className="text-blue-950 font-bold truncate">
+                          Rider: <span className="font-extrabold text-blue-900">{partner.name}</span>
+                        </p>
+                      </div>
+                      {partner.phone && (
+                        <a
+                          href={`tel:${partner.phone}`}
+                          className="px-2.5 py-1 rounded-lg bg-white border border-blue-200/80 text-blue-700 hover:bg-blue-100 font-bold text-[11px] flex items-center gap-1 shrink-0 transition-colors shadow-3xs"
+                          title={`Call ${partner.name}`}
+                        >
+                          <Phone className="w-3 h-3" />
+                          <span>Call</span>
+                        </a>
+                      )}
+                    </div>
+                  );
+                })()}
               </div>
             </div>
           ))}

@@ -1,5 +1,7 @@
 import { Response } from 'express';
 import { logger } from '../utils/logger';
+import { redisService } from './redisService';
+import Redis from 'ioredis';
 
 interface SSEClient {
   id: string;
@@ -18,16 +20,64 @@ interface BufferedEvent {
   timestamp: string;
 }
 
+const REDIS_PUB_SUB_CHANNEL = 'hunters:realtime:events';
+
 class EventHub {
+  private nodeId: string;
   private clients: SSEClient[] = [];
   private eventHistory: BufferedEvent[] = [];
   private heartbeatTimer: NodeJS.Timeout | null = null;
+  private subscriber: Redis | null = null;
+  private isSubscribed = false;
 
   constructor() {
+    this.nodeId = `node_${process.pid}_${Math.random().toString(36).substring(2, 8)}`;
+
     // Keepalive heartbeat every 25 seconds to keep proxies and firewalls from timing out
     this.heartbeatTimer = setInterval(() => {
       this.sendHeartbeat();
     }, 25000);
+
+    // Initialize Redis Pub/Sub subscriber for horizontal scale propagation
+    this.initRedisPubSub();
+  }
+
+  private async initRedisPubSub() {
+    try {
+      this.subscriber = redisService.createSubscriber();
+      if (!this.subscriber) return;
+
+      await this.subscriber.connect().catch(() => {});
+
+      this.subscriber.subscribe(REDIS_PUB_SUB_CHANNEL, (err) => {
+        if (err) {
+          logger.warn('Failed to subscribe to Redis real-time event channel, relying on local dispatch', { error: err.message });
+        } else {
+          this.isSubscribed = true;
+          logger.info(`Subscribed to Redis event bus (${REDIS_PUB_SUB_CHANNEL}) on node ${this.nodeId}`);
+        }
+      });
+
+      this.subscriber.on('message', (channel, message) => {
+        if (channel === REDIS_PUB_SUB_CHANNEL) {
+          try {
+            const parsed = JSON.parse(message);
+            // Ignore events initiated by this same process to avoid duplicates
+            if (parsed.originNodeId === this.nodeId) return;
+
+            this.dispatchLocal(parsed.id, parsed.eventType, parsed.data, parsed.filter, false);
+          } catch (e: any) {
+            logger.warn('Failed to parse incoming Redis broadcast message', { error: e.message });
+          }
+        }
+      });
+
+      this.subscriber.on('error', (err) => {
+        this.isSubscribed = false;
+      });
+    } catch (err: any) {
+      logger.warn('Redis pub/sub initialization bypassed (standalone mode active)');
+    }
   }
 
   private sendHeartbeat() {
@@ -92,6 +142,9 @@ class EventHub {
     logger.debug(`SSE Client disconnected: ${id} (Remaining: ${this.clients.length})`);
   }
 
+  /**
+   * Broadcasts real-time event to all connected clients and across Redis cluster nodes
+   */
   broadcast(eventType: string, data: any, filter?: { role?: string; userId?: string }) {
     const eventId = `evt_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
     const buffered: BufferedEvent = {
@@ -108,8 +161,29 @@ class EventHub {
       this.eventHistory = this.eventHistory.slice(-100);
     }
 
-    const payload = `id: ${eventId}\nevent: ${eventType}\ndata: ${JSON.stringify(data)}\n\n`;
+    // 1. Dispatch locally to all connected clients on this instance
+    this.dispatchLocal(eventId, eventType, data, filter, true);
 
+    // 2. Publish to Redis Pub/Sub for horizontal scaling across other server instances
+    const envelope = {
+      originNodeId: this.nodeId,
+      id: eventId,
+      eventType,
+      data,
+      filter,
+      timestamp: buffered.timestamp
+    };
+    redisService.publish(REDIS_PUB_SUB_CHANNEL, JSON.stringify(envelope)).catch(() => {});
+  }
+
+  private dispatchLocal(
+    eventId: string,
+    eventType: string,
+    data: any,
+    filter?: { role?: string; userId?: string },
+    isOrigin = true
+  ) {
+    const payload = `id: ${eventId}\nevent: ${eventType}\ndata: ${JSON.stringify(data)}\n\n`;
     const deadClients: string[] = [];
 
     this.clients.forEach((client) => {
@@ -137,12 +211,20 @@ class EventHub {
   }
 
   /**
-   * Graceful shutdown of all active SSE streams
+   * Graceful shutdown of all active SSE streams and Redis subscriber
    */
   closeAll() {
     if (this.heartbeatTimer) {
       clearInterval(this.heartbeatTimer);
       this.heartbeatTimer = null;
+    }
+
+    if (this.subscriber) {
+      try {
+        this.subscriber.quit().catch(() => this.subscriber?.disconnect());
+      } catch {}
+      this.subscriber = null;
+      this.isSubscribed = false;
     }
 
     const shutdownPayload = `event: server_shutdown\ndata: ${JSON.stringify({ message: 'Server shutting down' })}\n\n`;

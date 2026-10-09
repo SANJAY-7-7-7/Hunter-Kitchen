@@ -5,6 +5,7 @@ import cookieParser from 'cookie-parser';
 import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
 import path from 'path';
+import fs from 'fs';
 import { createServer as createViteServer } from 'vite';
 import { OAuth2Client } from 'google-auth-library';
 
@@ -34,6 +35,7 @@ import {
 } from './src/server/middleware/auth';
 
 import { postgresDb } from './src/server/db/postgres';
+import { runMigrations } from './database/scripts/migrate_schema';
 import { db } from './src/server/db';
 import { authService } from './src/server/services/authService';
 import { orderService } from './src/server/services/orderService';
@@ -45,6 +47,7 @@ import { eventHub } from './src/server/services/eventHub';
 import { cacheService } from './src/server/services/cacheService';
 import { redisService } from './src/server/services/redisService';
 import { emailService } from './src/server/services/emailService';
+import { paymentService } from './src/server/services/paymentService';
 import {
   validateAndSanitizeName,
   validateAndSanitizePhone,
@@ -60,26 +63,99 @@ async function startServer() {
   const app = express();
   const PORT = config.port;
 
-  // Initialize PostgreSQL Primary Connection Pool & Verification
+  // Initialize PostgreSQL Primary Connection Pool & Apply Schema Migrations
   await postgresDb.initialize();
+  try {
+    await runMigrations();
+    logger.info('[MIGRATIONS] Database schema migrations verified and up to date.');
+
+    // Auto-seed initial restaurant data, menu, and admin if database is newly initialized
+    try {
+      const userCountRes = await postgresDb.query('SELECT count(*)::int as count FROM users');
+      const userCount = Number(userCountRes.rows[0]?.count || 0);
+      if (userCount === 0) {
+        const dataDir = path.join(process.cwd(), 'data');
+        const dbFile = path.join(dataDir, 'database.json');
+        if (fs.existsSync(dbFile)) {
+          logger.info('[SEED] Clean database detected (0 users). Auto-seeding initial restaurant catalog, accounts, and settings...');
+          const { migrateJsonToPostgres } = await import('./scripts/migrate_json_to_postgres');
+          await migrateJsonToPostgres();
+          logger.info('[SEED] Initial database seeding completed successfully.');
+        }
+      }
+    } catch (seedErr: any) {
+      logger.warn(`[SEED] Auto-seed check notice: ${seedErr.message}`);
+    }
+  } catch (migErr: any) {
+    logger.error(`[MIGRATIONS] Database migration execution failed: ${migErr.message}`);
+  }
 
   // Configure reverse proxy / load balancer IP forwarding
   app.set('trust proxy', true);
 
-  // 1. OBSERVABILITY & SECURITY MIDDLEWARE PIPELINE
+  // 1A. CLOUD & CONTAINER HEALTH CHECK ENDPOINT (Render / Docker / Uptime probes)
+  // Served early before rate-limiter and CSRF to guarantee reliable platform heartbeats
+  app.get(['/api/health', '/health'], async (_req: Request, res: Response) => {
+    try {
+      const dbCheck = await postgresDb.query('SELECT 1 as healthy, NOW() as server_time, current_database() as db_name');
+      return res.status(200).json({
+        status: 'ok',
+        healthy: true,
+        database: dbCheck.rows.length > 0 ? 'connected' : 'unhealthy',
+        dbName: dbCheck.rows[0]?.db_name || 'postgres',
+        timestamp: new Date().toISOString(),
+        uptimeSeconds: Math.floor(process.uptime()),
+        env: config.env
+      });
+    } catch (err: any) {
+      return res.status(503).json({
+        status: 'degraded',
+        healthy: false,
+        database: 'disconnected',
+        error: err.message,
+        timestamp: new Date().toISOString()
+      });
+    }
+  });
+
+  // 1B. OBSERVABILITY & SECURITY MIDDLEWARE PIPELINE
   app.use(requestIdMiddleware);
   app.use(securityHeadersMiddleware);
+  const allowedOrigins = new Set(config.corsOrigins);
+  if (process.env.RENDER_EXTERNAL_URL) {
+    allowedOrigins.add(process.env.RENDER_EXTERNAL_URL);
+  }
+
   app.use(
     cors({
       origin: (origin, callback) => {
-        // Allow requests with no origin (curl/mobile/internal) or any origin in browser
-        callback(null, true);
+        // Allow requests with no origin (curl/mobile/internal server-to-server) or allowed origins
+        if (!origin || allowedOrigins.has(origin)) {
+          return callback(null, true);
+        }
+        try {
+          const parsed = new URL(origin);
+          if (parsed.hostname.endsWith('.onrender.com') || (config.appOrigin && origin === config.appOrigin)) {
+            return callback(null, true);
+          }
+        } catch {}
+        if (config.env !== 'production' && /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)) {
+          return callback(null, true);
+        }
+        return callback(new Error('Blocked by CORS policy'));
       },
       credentials: true
     })
   );
   app.use(cookieParser());
-  app.use(express.json({ limit: '2mb' }));
+  app.use(
+    express.json({
+      limit: '2mb',
+      verify: (req: any, _res, buf) => {
+        req.rawBody = buf;
+      }
+    })
+  );
   app.use(rateLimiterMiddleware);
   app.use(requestLoggerMiddleware);
   app.use(idempotencyMiddleware);
@@ -98,20 +174,45 @@ async function startServer() {
       });
     }
 
-    // Resolve authenticated user from session cookie or token parameter
+    // Strictly authenticate connection via session cookie or Authorization Bearer header
     const token = extractToken(req);
-    let user: User | undefined;
-    if (token) {
-      try {
-        const payload = authService.verifyToken(token);
-        user = await db.getUserById(payload.userId);
-      } catch {
-        // Invalid token; stream connects unauthenticated
-      }
+    if (!token) {
+      return res.status(401).json({
+        success: false,
+        error: {
+          code: 'UNAUTHORIZED',
+          message: 'Authentication required for real-time event stream.'
+        }
+      });
     }
 
-    const role = user ? user.role : (req.query.role as string);
-    const userId = user ? user.id : (req.query.userId as string);
+    let user: User | undefined;
+    try {
+      const payload = await authService.verifyTokenAsync(token);
+      user = await db.getUserById(payload.userId);
+    } catch {
+      return res.status(401).json({
+        success: false,
+        error: {
+          code: 'UNAUTHORIZED',
+          message: 'Invalid or expired session token.'
+        }
+      });
+    }
+
+    if (!user) {
+      return res.status(401).json({
+        success: false,
+        error: {
+          code: 'UNAUTHORIZED',
+          message: 'Authenticated user not found.'
+        }
+      });
+    }
+
+    // Role and userId are strictly derived from verified session - NO query parameter spoofing
+    const role = user.role;
+    const userId = user.id;
     const lastEventId = (req.headers['last-event-id'] as string) || (req.query.lastEventId as string);
     const clientId = `sse_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
 
@@ -129,11 +230,15 @@ async function startServer() {
     });
   });
 
-  // 3. HEALTH & METRICS CHECK (PostgreSQL + Redis + App State)
+  // 3. HEALTH & METRICS CHECK (PostgreSQL + Redis + Rate Limiting + App State)
   app.get('/api/health', async (req: Request, res: Response) => {
     const dbHealth = await postgresDb.healthCheck();
+    const redisHealth = await redisService.healthCheck();
+    const rateLimitMetrics = getRateLimitMetrics();
+    const isSystemHealthy = dbHealth.ok && (redisHealth.ok || redisHealth.mode === 'IN_MEMORY_FALLBACK');
+
     res.json({
-      status: dbHealth.ok ? 'ok' : 'degraded',
+      status: isSystemHealthy ? 'ok' : 'degraded',
       timestamp: new Date().toISOString(),
       uptime: process.uptime(),
       memoryUsage: process.memoryUsage(),
@@ -146,8 +251,14 @@ async function startServer() {
         error: dbHealth.error
       },
       redis: {
-        status: 'HEALTHY'
-      }
+        engine: redisHealth.mode === 'STANDALONE_REDIS' ? 'Redis 7.x (ioredis)' : 'In-Memory Resilient Cluster Fallback',
+        status: redisHealth.status,
+        mode: redisHealth.mode,
+        latencyMs: redisHealth.latencyMs,
+        stats: redisService.getStats(),
+        error: redisHealth.error
+      },
+      rateLimiting: rateLimitMetrics
     });
   });
 
@@ -544,8 +655,8 @@ async function startServer() {
     }
   });
 
-  // INFRASTRUCTURE & ARCHITECTURAL SECURITY STATUS
-  app.get('/api/infra/status', async (req: Request, res: Response) => {
+  // INFRASTRUCTURE & ARCHITECTURAL SECURITY STATUS (Strictly restricted to ADMIN & OWNER)
+  app.get('/api/infra/status', requireAuth, requireRole('ADMIN', 'OWNER'), async (req: Request, res: Response) => {
     const dbHealth = await postgresDb.healthCheck();
     res.json({
       success: true,
@@ -1717,10 +1828,71 @@ async function startServer() {
     }
   });
 
+  // 15B. ONLINE PAYMENT GATEWAY ENDPOINTS
+  app.post('/api/payments/create-order', requireAuth, async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { orderId } = req.body;
+      if (!orderId) {
+        throw new ValidationError('orderId is required to initialize payment');
+      }
+      const data = await paymentService.createGatewayOrder(orderId, req.user!);
+      res.json({ success: true, data });
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  app.post('/api/payments/verify', requireAuth, async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const result = await paymentService.verifyCheckoutSignature(req.body, req.user!);
+      res.json(result);
+    } catch (err) {
+      next(err);
+    }
+  });
+
+  // 15C. INCOMING PAYMENT & GATEWAY WEBHOOK (Razorpay, Stripe)
+  app.post('/api/webhooks/payment', async (req: Request, res: Response) => {
+    try {
+      const signature = (req.headers['x-razorpay-signature'] ||
+        req.headers['x-webhook-signature'] ||
+        req.headers['stripe-signature']) as string | undefined;
+      const eventId = req.headers['x-razorpay-event-id'] as string | undefined;
+      const rawBody = (req as any).rawBody || Buffer.from(JSON.stringify(req.body));
+
+      const result = await paymentService.processWebhook(
+        rawBody,
+        signature,
+        eventId,
+        req.requestId || 'req_webhook',
+        req.ip || '127.0.0.1'
+      );
+
+      if (!result.received && result.reason === 'INVALID_SIGNATURE') {
+        return res.status(400).json({ success: false, error: 'Invalid webhook signature' });
+      }
+
+      if (!result.received && result.reason === 'MISSING_SIGNATURE_OR_BODY') {
+        return res.status(400).json({ success: false, error: 'Missing webhook signature or body' });
+      }
+
+      res.json({
+        success: true,
+        received: result.received,
+        processed: result.processed,
+        reason: result.reason,
+        timestamp: new Date().toISOString()
+      });
+    } catch (err: any) {
+      logger.error('Error handling payment webhook', { error: err.message });
+      res.status(500).json({ success: false, error: 'Internal webhook handling error' });
+    }
+  });
+
   // 16. GLOBAL ERROR HANDLER
   app.use(errorHandler);
 
-  // 17. VITE MIDDLEWARE FOR DEV & STATIC SERVING FOR PRODUCTION
+  // 17. VITE MIDDLEWARE FOR DEV & STATIC SERVING FOR PRODUCTION (CDN & EDGE CACHING)
   if (process.env.NODE_ENV !== 'production') {
     const isHmrDisabled = process.env.DISABLE_HMR === 'true';
     const vite = await createViteServer({
@@ -1733,20 +1905,50 @@ async function startServer() {
     app.use(vite.middlewares);
   } else {
     const distPath = path.join(process.cwd(), 'dist');
-    app.use(express.static(distPath));
+
+    // CDN & Browser 1-Year Immutable Caching for hashed asset bundles
+    app.use(
+      '/assets',
+      express.static(path.join(distPath, 'assets'), {
+        maxAge: '1y',
+        immutable: true,
+        fallthrough: false
+      })
+    );
+
+    // Root Static Directory (favicon, robots, manifests, images)
+    app.use(
+      express.static(distPath, {
+        setHeaders: (res, filePath) => {
+          if (filePath.endsWith('index.html')) {
+            // HTML files must never be aggressively cached to guarantee instant deployment pickup
+            res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+          }
+        }
+      })
+    );
+
     app.get('*', (req: Request, res: Response) => {
+      res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
       res.sendFile(path.join(distPath, 'index.html'));
     });
   }
 
   // 18. SERVER BOOT & BACKGROUND WORKER INITIALIZATION
+  // 15-minute unpaid online order expiry worker: sweeps every 60 seconds
+  const paymentExpiryInterval = setInterval(() => {
+    paymentService.cancelExpiredUnpaidOrders().catch((err: any) => {
+      logger.error(`[PAYMENT_EXPIRY] Periodic unpaid order sweep failed: ${err.message}`);
+    });
+  }, 60000);
+
   const server = app.listen(PORT, '0.0.0.0', () => {
     logger.info(`Hunter's Kitchen Server booted on port ${PORT} [ENV: ${config.env}] with PostgreSQL authoritative backend.`);
     outboxWorker.start();
   });
 
   // 19. GRACEFUL SHUTDOWN HANDLERS
-  setupGracefulShutdown(server);
+  setupGracefulShutdown(server, [paymentExpiryInterval]);
 }
 
 startServer();

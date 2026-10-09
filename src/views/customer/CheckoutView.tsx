@@ -64,6 +64,9 @@ export const CheckoutView: React.FC<CheckoutViewProps> = ({
 
   useEffect(() => {
     onCheckoutFlowChange(true);
+    window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
+    if (document.documentElement) document.documentElement.scrollTop = 0;
+    if (document.body) document.body.scrollTop = 0;
     return () => onCheckoutFlowChange(false);
   }, [onCheckoutFlowChange]);
 
@@ -294,7 +297,86 @@ export const CheckoutView: React.FC<CheckoutViewProps> = ({
 
       const createdOrder = await apiService.createOrder(orderPayload);
 
-      // Trigger order confirmed tick animation modal
+      // Handle Online Payment Flow via Razorpay
+      if (method === 'ONLINE') {
+        const loadRazorpayScript = (): Promise<boolean> => {
+          return new Promise((resolve) => {
+            if ((window as any).Razorpay) {
+              resolve(true);
+              return;
+            }
+            const script = document.createElement('script');
+            script.src = 'https://checkout.razorpay.com/v1/checkout.js';
+            script.async = true;
+            script.onload = () => resolve(true);
+            script.onerror = () => resolve(false);
+            document.body.appendChild(script);
+          });
+        };
+
+        const isLoaded = await loadRazorpayScript();
+        if (!isLoaded || !(window as any).Razorpay) {
+          throw new Error('Could not load payment gateway. Please check your internet connection or use Cash on Delivery.');
+        }
+
+        const gatewayData = await apiService.createGatewayOrder(createdOrder.id);
+
+        const rzp = new (window as any).Razorpay({
+          key: gatewayData.keyId,
+          amount: gatewayData.amountPaise,
+          currency: gatewayData.currency || 'INR',
+          name: "Hunter's Kitchen",
+          description: `Order #${createdOrder.orderNumber}`,
+          order_id: gatewayData.gatewayOrderId,
+          prefill: {
+            name: currentUser?.name || 'Customer',
+            email: currentUser?.email || '',
+            contact: currentUser?.phone || ''
+          },
+          theme: {
+            color: '#b91c1c'
+          },
+          handler: async (response: any) => {
+            try {
+              setIsSubmitting(true);
+              await apiService.verifyPayment({
+                orderId: createdOrder.id,
+                razorpayOrderId: response.razorpay_order_id,
+                razorpayPaymentId: response.razorpay_payment_id,
+                razorpaySignature: response.razorpay_signature
+              });
+
+              setConfirmedOrder({
+                ...createdOrder,
+                paymentStatus: 'VERIFIED',
+                status: 'ACCEPTED'
+              });
+            } catch (vErr: any) {
+              console.error('Payment verification error:', vErr);
+              setErrorMessage(vErr.message || 'Payment verification failed. Please contact support.');
+            } finally {
+              setIsSubmitting(false);
+            }
+          },
+          modal: {
+            ondismiss: () => {
+              setIsSubmitting(false);
+              setErrorMessage(`Payment window closed. Order #${createdOrder.orderNumber} is pending payment.`);
+            }
+          }
+        });
+
+        rzp.on('payment.failed', (resp: any) => {
+          setIsSubmitting(false);
+          const reason = resp.error?.description || resp.error?.reason || 'Payment failed';
+          setErrorMessage(`Payment failed: ${reason}. Please try another payment method.`);
+        });
+
+        rzp.open();
+        return;
+      }
+
+      // Cash on Delivery Flow: Instant Confirmation
       setConfirmedOrder(createdOrder);
     } catch (err: any) {
       console.error('Order creation error:', err);
@@ -348,32 +430,36 @@ export const CheckoutView: React.FC<CheckoutViewProps> = ({
   }
 
   return (
-    <div className="pb-32 md:pb-20 max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-5 sm:py-7 space-y-6">
+    <div className="pb-32 md:pb-20 w-full max-w-5xl mx-auto px-0 py-3 sm:py-5 space-y-3.5 sm:space-y-4">
       {/* Top Header Bar */}
-      <div className="flex items-center justify-between border-b border-stone-200/80 pb-4">
-        <div className="flex items-center gap-3.5">
+      <div className="flex items-center justify-between pb-3 border-b border-stone-200/80 gap-2">
+        <div className="flex items-center gap-2.5 min-w-0">
           <button
             onClick={onBackToCart}
-            className="w-10 h-10 rounded-full bg-stone-100 hover:bg-stone-200 active:scale-95 flex items-center justify-center text-stone-700 transition-all cursor-pointer shadow-xs"
+            className="w-9 h-9 rounded-full bg-stone-100 hover:bg-stone-200 active:scale-95 flex items-center justify-center text-stone-700 transition-all cursor-pointer shadow-2xs shrink-0"
             title="Back to Menu"
           >
             <ArrowLeft className="w-5 h-5" />
           </button>
-          <div>
-            <h1 className="text-xl sm:text-2xl font-black text-stone-900 tracking-tight">Cart</h1>
-            <p className="text-xs sm:text-sm text-stone-500 font-medium mt-0.5">Review items & place your order</p>
+          <div className="min-w-0">
+            <h1 className="text-lg sm:text-xl font-black text-stone-900 tracking-tight leading-tight truncate">
+              Cart
+            </h1>
+            <p className="text-xs text-stone-500 font-medium truncate">
+              Hunter's Kitchen • <span className="text-emerald-700 font-bold">25-35 mins</span>
+            </p>
           </div>
         </div>
 
-        <div className="bg-red-50 border border-red-200/80 text-red-700 px-3.5 py-1.5 rounded-xl text-xs sm:text-sm font-bold flex items-center gap-1.5 shadow-2xs">
-          <Utensils className="w-4 h-4" />
-          <span>{totalItemCount} {totalItemCount === 1 ? 'Item' : 'Items'}</span>
+        <div className="bg-red-50 border border-red-200 text-red-700 px-3 py-1 rounded-full text-xs font-bold flex items-center gap-1.5 shadow-2xs shrink-0 whitespace-nowrap">
+          <Utensils className="w-3.5 h-3.5 shrink-0" />
+          <span className="whitespace-nowrap">{totalItemCount} {totalItemCount === 1 ? 'Item' : 'Items'}</span>
         </div>
       </div>
 
       {errorMessage && (
-        <div className="p-4 bg-red-50 border border-red-200 rounded-2xl text-red-700 text-sm font-semibold flex items-center gap-3 shadow-xs animate-shake">
-          <AlertCircle className="w-5 h-5 shrink-0 text-red-600" />
+        <div className="p-3.5 bg-red-50 border border-red-200 rounded-2xl text-red-700 text-xs sm:text-sm font-semibold flex items-center gap-3 shadow-xs animate-shake">
+          <AlertCircle className="w-4 h-4 shrink-0 text-red-600" />
           <span className="flex-1">{errorMessage}</span>
           <button onClick={() => setErrorMessage('')} className="text-red-500 hover:text-red-700">
             <X className="w-4 h-4" />
@@ -381,638 +467,545 @@ export const CheckoutView: React.FC<CheckoutViewProps> = ({
         </div>
       )}
 
-      {/* 2-Column Responsive Layout: Left (Items, Fulfillment, Address, Instructions), Right (Payment & Bill Breakdown) */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-        {/* Left Column (Items & Delivery details) */}
-        <div className="lg:col-span-7 space-y-6">
-          {/* 1. ORDER ITEMS SUMMARY CARD */}
-          <div className="bg-white rounded-2xl border border-stone-200/90 p-5 sm:p-6 shadow-xs space-y-4">
-        <div className="flex items-center justify-between pb-3 border-b border-stone-100">
-          <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-xl bg-red-50 text-red-700 flex items-center justify-center font-bold">
-              <ShoppingBag className="w-4 h-4" />
-            </div>
-            <div>
-              <h2 className="text-sm sm:text-base font-extrabold uppercase tracking-wide text-stone-900">
-                Order Items ({cartItems.length})
-              </h2>
-              <p className="text-xs text-stone-400 font-medium">Hunter's Kitchen Freshly Prepared</p>
-            </div>
-          </div>
-          <button
-            onClick={onBackToCart}
-            type="button"
-            className="text-xs sm:text-sm font-bold text-red-700 hover:text-red-800 bg-red-50 hover:bg-red-100/80 px-3 py-1.5 rounded-xl border border-red-200/70 transition-all flex items-center gap-1 cursor-pointer"
-          >
-            <Plus className="w-3.5 h-3.5" />
-            <span>Add More Dishes</span>
-          </button>
-        </div>
-
-        {/* Detailed Item Rows */}
-        <div className="divide-y divide-stone-100">
-          {cartItems.map((item) => (
-            <div key={item.cartItemId} className="py-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4">
-              <div className="flex items-start gap-3 flex-1 min-w-0">
-                {/* Veg/Non-Veg Badge */}
-                <div className="mt-1 shrink-0">
-                  <div
-                    className={`w-4 h-4 rounded-md border flex items-center justify-center ${
-                      item.menuItem?.isVeg ? 'border-emerald-600 bg-white' : 'border-red-600 bg-white'
-                    }`}
-                    title={item.menuItem?.isVeg ? 'Vegetarian' : 'Non-Vegetarian'}
-                  >
-                    <div
-                      className={`w-2 h-2 rounded-full ${
-                        item.menuItem?.isVeg ? 'bg-emerald-600' : 'bg-red-600'
-                      }`}
-                    />
-                  </div>
+      {/* 2-Column Responsive Layout */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
+        {/* Left Column (Items, Fulfillment, Address, Instructions) */}
+        <div className="lg:col-span-7 space-y-4">
+          {/* 1. ORDER ITEMS CARD (Swiggy Style) */}
+          <div className="bg-white rounded-2xl border border-stone-200/90 p-4 sm:p-5 shadow-xs space-y-3">
+            <div className="flex items-center justify-between pb-2 border-b border-stone-100">
+              <div className="flex items-center gap-2">
+                <div className="w-7 h-7 rounded-lg bg-red-50 text-red-700 flex items-center justify-center font-bold">
+                  <ShoppingBag className="w-3.5 h-3.5" />
                 </div>
-
-                <div className="min-w-0 flex-1">
-                  <h3 className="text-base sm:text-lg font-bold text-stone-900 leading-snug">
-                    {item.menuItem?.name || 'Dish'}
-                  </h3>
-                  
-                  {/* Customizations & Addons Pill Badges */}
-                  {((item.customizations && item.customizations.length > 0) || (item.addons && item.addons.length > 0)) && (
-                    <div className="flex flex-wrap gap-1.5 mt-1.5">
-                      {(item.customizations || []).map((c, i) => (
-                        <span
-                          key={`cust-${i}`}
-                          className="inline-flex items-center text-xs font-semibold bg-stone-100 text-stone-700 px-2 py-0.5 rounded-md border border-stone-200"
-                        >
-                          {c.optionName}: <strong className="ml-1 text-stone-900">{c.selectedLabel}</strong>
-                          {c.price > 0 && <span className="ml-1 text-stone-500">(+₹{c.price})</span>}
-                        </span>
-                      ))}
-                      {(item.addons || []).map((a, i) => (
-                        <span
-                          key={`addon-${i}`}
-                          className="inline-flex items-center text-xs font-semibold bg-amber-50 text-amber-800 px-2 py-0.5 rounded-md border border-amber-200"
-                        >
-                          + {a.name} (+₹{a.price})
-                        </span>
-                      ))}
-                    </div>
-                  )}
-
-                  {/* Special Cooking Note for Item */}
-                  {item.specialInstructions && (
-                    <p className="text-xs text-stone-500 italic mt-1.5 flex items-center gap-1 bg-stone-50 px-2.5 py-1 rounded-lg border border-stone-200/60 max-w-fit">
-                      <MessageSquare className="w-3 h-3 text-stone-400 shrink-0" />
-                      <span>Note: "{item.specialInstructions}"</span>
-                    </p>
-                  )}
-
-                  <div className="text-xs sm:text-sm font-semibold text-stone-500 mt-1">
-                    ₹{item.itemTotalPrice / item.quantity} per unit
-                  </div>
-                </div>
-              </div>
-
-              {/* Quantity Controls & Item Total Price */}
-              <div className="flex items-center justify-between sm:justify-end gap-4 pl-7 sm:pl-0 pt-2 sm:pt-0 border-t sm:border-t-0 border-stone-100">
-                {/* Interactive Quantity Stepper */}
-                <div className="flex items-center gap-2.5 bg-stone-100 border border-stone-200/90 rounded-xl px-2.5 py-1.5 text-sm font-bold shadow-2xs">
-                  <button
-                    type="button"
-                    onClick={() => updateQuantity(item.cartItemId, item.quantity - 1)}
-                    className="w-6 h-6 rounded-lg bg-white hover:bg-stone-200 text-stone-700 hover:text-red-700 flex items-center justify-center transition-all cursor-pointer shadow-2xs active:scale-95"
-                    title={item.quantity === 1 ? 'Remove item' : 'Decrease quantity'}
-                  >
-                    {item.quantity === 1 ? <Trash2 className="w-3.5 h-3.5 text-red-600" /> : <Minus className="w-3.5 h-3.5" />}
-                  </button>
-                  <span className="w-5 text-center font-extrabold text-stone-900 text-sm">{item.quantity}</span>
-                  <button
-                    type="button"
-                    onClick={() => updateQuantity(item.cartItemId, item.quantity + 1)}
-                    className="w-6 h-6 rounded-lg bg-white hover:bg-stone-200 text-stone-700 hover:text-red-700 flex items-center justify-center transition-all cursor-pointer shadow-2xs active:scale-95"
-                    title="Increase quantity"
-                  >
-                    <Plus className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-
-                {/* Item Total Price */}
-                <div className="text-right min-w-[75px]">
-                  <span className="text-base sm:text-lg font-black text-stone-900 block">
-                    ₹{item.itemTotalPrice}
-                  </span>
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {/* 2. ORDER FULFILLMENT & SERVICE TYPE */}
-      <div className="bg-white rounded-2xl border border-stone-200/90 p-5 sm:p-6 shadow-xs space-y-4">
-        <div className="flex flex-wrap items-center justify-between gap-2 pb-3 border-b border-stone-100">
-          <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-xl bg-red-50 text-red-700 flex items-center justify-center font-bold">
-              <Clock className="w-4 h-4 text-red-600" />
-            </div>
-            <div>
-              <h2 className="text-sm sm:text-base font-extrabold uppercase tracking-wide text-stone-900">
-                Order Fulfillment
-              </h2>
-              <p className="text-xs text-stone-400 font-medium">Choose delivery mode</p>
-            </div>
-          </div>
-
-          <span className="text-xs sm:text-sm font-bold text-emerald-800 bg-emerald-50 px-3 py-1 rounded-xl border border-emerald-200 flex items-center gap-1.5 shadow-2xs">
-            <Sparkles className="w-3.5 h-3.5 text-emerald-600" />
-            <span>Express ASAP ({fulfillmentType === 'DELIVERY' ? '25-35 mins' : '15 mins'})</span>
-          </span>
-        </div>
-
-        {/* Fulfillment Type Toggle Tabs */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
-          <button
-            type="button"
-            onClick={() => setFulfillmentType('DELIVERY')}
-            className={`p-3.5 rounded-2xl border text-left flex items-center gap-3 transition-all cursor-pointer ${
-              fulfillmentType === 'DELIVERY'
-                ? 'bg-red-50/80 border-red-500 ring-2 ring-red-500/20 shadow-xs'
-                : 'bg-stone-50/60 border-stone-200 hover:border-stone-300'
-            }`}
-          >
-            <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-bold ${
-              fulfillmentType === 'DELIVERY' ? 'bg-red-600 text-white shadow-xs' : 'bg-stone-200 text-stone-600'
-            }`}>
-              <Bike className="w-5 h-5" />
-            </div>
-            <div>
-              <p className={`text-sm sm:text-base font-bold ${fulfillmentType === 'DELIVERY' ? 'text-red-950' : 'text-stone-800'}`}>
-                Home Delivery
-              </p>
-              <p className="text-xs text-stone-500">Delivered right to your doorstep</p>
-            </div>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setFulfillmentType('PICKUP')}
-            className={`p-3.5 rounded-2xl border text-left flex items-center gap-3 transition-all cursor-pointer ${
-              fulfillmentType === 'PICKUP'
-                ? 'bg-amber-50/80 border-amber-500 ring-2 ring-amber-500/20 shadow-xs'
-                : 'bg-stone-50/60 border-stone-200 hover:border-stone-300'
-            }`}
-          >
-            <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-bold ${
-              fulfillmentType === 'PICKUP' ? 'bg-amber-600 text-white shadow-xs' : 'bg-stone-200 text-stone-600'
-            }`}>
-              <ShoppingBag className="w-5 h-5" />
-            </div>
-            <div>
-              <p className={`text-sm sm:text-base font-bold ${fulfillmentType === 'PICKUP' ? 'text-amber-950' : 'text-stone-800'}`}>
-                Self Pickup
-              </p>
-              <p className="text-xs text-stone-500">Collect fresh from restaurant counter (No delivery fee)</p>
-            </div>
-          </button>
-        </div>
-      </div>
-
-      {/* 3. DELIVERY ADDRESS OR PICKUP HUB */}
-      {fulfillmentType === 'DELIVERY' ? (
-        <div className="bg-white rounded-2xl border border-stone-200/90 p-5 sm:p-6 shadow-xs space-y-3.5">
-          <div className="flex items-center justify-between pb-2 border-b border-stone-100">
-            <div className="flex items-center gap-2.5">
-              <div className="w-8 h-8 rounded-xl bg-red-50 text-red-700 flex items-center justify-center font-bold">
-                <MapPin className="w-4 h-4 text-red-600" />
-              </div>
-              <div>
-                <h2 className="text-sm sm:text-base font-extrabold uppercase tracking-wide text-stone-900">
-                  Delivery Address
+                <h2 className="text-xs sm:text-sm font-black uppercase tracking-wide text-stone-900">
+                  Order Items ({cartItems.length})
                 </h2>
-                <p className="text-xs text-stone-400 font-medium">Selected drop-off location</p>
               </div>
             </div>
+
+            {/* Detailed Item Rows */}
+            <div className="divide-y divide-stone-100">
+              {cartItems.map((item) => (
+                <div key={item.cartItemId} className="py-3.5 flex items-center justify-between gap-3">
+                  {/* Left: Veg/Non-Veg Badge & Dish Info */}
+                  <div className="flex items-start gap-2.5 flex-1 min-w-0">
+                    <div className="mt-0.5 shrink-0">
+                      <div
+                        className={`w-3.5 h-3.5 rounded-xs border flex items-center justify-center ${
+                          item.menuItem?.isVeg ? 'border-emerald-600 bg-white' : 'border-red-600 bg-white'
+                        }`}
+                        title={item.menuItem?.isVeg ? 'Vegetarian' : 'Non-Vegetarian'}
+                      >
+                        <div
+                          className={`w-1.5 h-1.5 rounded-full ${
+                            item.menuItem?.isVeg ? 'bg-emerald-600' : 'bg-red-600'
+                          }`}
+                        />
+                      </div>
+                    </div>
+
+                    <div className="min-w-0 flex-1">
+                      <h3 className="text-xs sm:text-sm font-bold text-stone-900 leading-snug break-words">
+                        {item.menuItem?.name || 'Dish'}
+                      </h3>
+                      
+                      {/* Customizations & Addons */}
+                      {((item.customizations && item.customizations.length > 0) || (item.addons && item.addons.length > 0)) && (
+                        <div className="flex flex-wrap gap-1 mt-0.5">
+                          {(item.customizations || []).map((c, i) => (
+                            <span
+                              key={`cust-${i}`}
+                              className="text-[10px] sm:text-xs text-stone-500 font-medium bg-stone-50 px-1.5 py-0.5 rounded border border-stone-200/60"
+                            >
+                              {c.optionName}: <strong>{c.selectedLabel}</strong>
+                            </span>
+                          ))}
+                          {(item.addons || []).map((a, i) => (
+                            <span
+                              key={`addon-${i}`}
+                              className="text-[10px] sm:text-xs text-amber-800 font-medium bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200/60"
+                            >
+                              +{a.name}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+
+                      {/* Special Cooking Note */}
+                      {item.specialInstructions && (
+                        <p className="text-[11px] text-stone-500 italic mt-0.5 flex items-center gap-1">
+                          <MessageSquare className="w-2.5 h-2.5 text-stone-400 shrink-0" />
+                          <span>"{item.specialInstructions}"</span>
+                        </p>
+                      )}
+
+                      <p className="text-[11px] sm:text-xs text-stone-400 font-semibold mt-0.5">
+                        ₹{item.itemTotalPrice / item.quantity} per unit
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Right: Quantity Stepper & Total Price */}
+                  <div className="flex items-center gap-3 shrink-0">
+                    <div className="flex items-center bg-stone-50 border border-stone-200 rounded-lg px-2 py-1 text-xs font-bold text-stone-800 shadow-2xs">
+                      <button
+                        type="button"
+                        onClick={() => updateQuantity(item.cartItemId, item.quantity - 1)}
+                        className="w-5 h-5 flex items-center justify-center hover:bg-stone-200 rounded text-stone-700 hover:text-red-700 transition-colors cursor-pointer"
+                        title={item.quantity === 1 ? 'Remove' : 'Decrease'}
+                      >
+                        {item.quantity === 1 ? <Trash2 className="w-3 h-3 text-red-600" /> : <Minus className="w-3 h-3" />}
+                      </button>
+                      <span className="w-5 text-center font-black text-stone-900 text-xs sm:text-sm">{item.quantity}</span>
+                      <button
+                        type="button"
+                        onClick={() => updateQuantity(item.cartItemId, item.quantity + 1)}
+                        className="w-5 h-5 flex items-center justify-center hover:bg-stone-200 rounded text-stone-700 hover:text-red-700 transition-colors cursor-pointer"
+                        title="Increase"
+                      >
+                        <Plus className="w-3 h-3" />
+                      </button>
+                    </div>
+
+                    <div className="w-14 sm:w-16 text-right font-black text-stone-900 text-xs sm:text-sm">
+                      ₹{item.itemTotalPrice}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Add More Dishes Action Row */}
             <button
+              onClick={onBackToCart}
               type="button"
-              onClick={() => setShowAddressModal(true)}
-              className="text-xs sm:text-sm font-extrabold text-red-700 bg-red-50 hover:bg-red-100 px-3.5 py-1.5 rounded-xl border border-red-200/80 transition-all cursor-pointer shadow-2xs"
+              className="w-full py-2.5 px-4 rounded-xl border border-dashed border-stone-300 hover:border-red-400 bg-stone-50/60 hover:bg-red-50/50 text-red-700 text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer"
             >
-              {activeAddress ? 'Change Address' : '+ Add Address'}
+              <Plus className="w-3.5 h-3.5" />
+              <span>Add More Dishes</span>
             </button>
           </div>
 
-          {activeAddress ? (
-            <div className="p-4 bg-stone-50 rounded-xl border border-stone-200/70 space-y-1.5">
-              <div className="flex items-center gap-2">
-                <p className="text-sm sm:text-base font-bold text-stone-900">
-                  {activeAddress.name || currentUser?.name || 'Customer'}
-                </p>
-                <span className="text-xs font-bold uppercase tracking-wider bg-white text-stone-700 px-2 py-0.5 rounded-md border border-stone-200">
-                  {activeAddress.type || 'HOME'}
-                </span>
+          {/* 2. ORDER FULFILLMENT MODE */}
+          <div className="bg-white rounded-2xl border border-stone-200/90 p-4 sm:p-5 shadow-xs space-y-3">
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2 min-w-0">
+                <div className="w-7 h-7 rounded-lg bg-red-50 text-red-700 flex items-center justify-center font-bold shrink-0">
+                  <Clock className="w-3.5 h-3.5" />
+                </div>
+                <h2 className="text-xs sm:text-sm font-black uppercase tracking-wide text-stone-900 truncate">
+                  Fulfillment Mode
+                </h2>
               </div>
-              <p className="text-sm text-stone-600 leading-relaxed font-medium">
-                {activeAddress.doorNo ? `${activeAddress.doorNo}, ` : ''}{activeAddress.street || ''}, {activeAddress.area || ''}, {activeAddress.city || ''} -{' '}
-                <span className="font-bold text-stone-800">{activeAddress.pincode || ''}</span>
-              </p>
-              {activeAddress.phone && (
-                <p className="text-xs sm:text-sm text-stone-600 font-semibold pt-1 flex items-center gap-1.5">
-                  <span>📞 Contact:</span>
-                  <span className="font-bold text-stone-900">{activeAddress.phone}</span>
-                </p>
+              <span className="shrink-0 whitespace-nowrap text-[10px] sm:text-[11px] font-bold text-emerald-800 bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-200 flex items-center gap-1">
+                <Sparkles className="w-3 h-3 text-emerald-600 shrink-0" />
+                <span>Express ({fulfillmentType === 'DELIVERY' ? '25-35 mins' : '15 mins'})</span>
+              </span>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2 bg-stone-100 p-1 rounded-xl">
+              <button
+                type="button"
+                onClick={() => setFulfillmentType('DELIVERY')}
+                className={`py-2 px-3 rounded-lg text-xs sm:text-sm font-bold flex items-center justify-center gap-2 transition-all cursor-pointer ${
+                  fulfillmentType === 'DELIVERY'
+                    ? 'bg-white text-red-900 shadow-xs ring-1 ring-stone-200'
+                    : 'text-stone-600 hover:text-stone-900'
+                }`}
+              >
+                <Bike className="w-4 h-4 text-red-600" />
+                <span>Home Delivery</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setFulfillmentType('PICKUP')}
+                className={`py-2 px-3 rounded-lg text-xs sm:text-sm font-bold flex items-center justify-center gap-2 transition-all cursor-pointer ${
+                  fulfillmentType === 'PICKUP'
+                    ? 'bg-white text-amber-900 shadow-xs ring-1 ring-stone-200'
+                    : 'text-stone-600 hover:text-stone-900'
+                }`}
+              >
+                <ShoppingBag className="w-4 h-4 text-amber-600" />
+                <span>Self Pickup</span>
+              </button>
+            </div>
+          </div>
+
+          {/* 3. DELIVERY ADDRESS OR PICKUP LOCATION */}
+          {fulfillmentType === 'DELIVERY' ? (
+            <div className="bg-white rounded-2xl border border-stone-200/90 p-4 sm:p-5 shadow-xs space-y-2.5">
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2 min-w-0">
+                  <div className="w-7 h-7 rounded-lg bg-red-50 text-red-700 flex items-center justify-center font-bold shrink-0">
+                    <MapPin className="w-3.5 h-3.5" />
+                  </div>
+                  <h2 className="text-xs sm:text-sm font-black uppercase tracking-wide text-stone-900 truncate">
+                    Delivery Address
+                  </h2>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowAddressModal(true)}
+                  className="shrink-0 text-xs font-black text-red-700 hover:text-red-800 uppercase tracking-wider cursor-pointer"
+                >
+                  {activeAddress ? 'Change' : '+ Add'}
+                </button>
+              </div>
+
+              {activeAddress ? (
+                <div className="p-3 bg-stone-50/70 rounded-xl border border-stone-200/70 space-y-1 text-xs sm:text-sm">
+                  <div className="flex items-center gap-2">
+                    <span className="font-bold text-stone-900">
+                      {activeAddress.name || currentUser?.name || 'Customer'}
+                    </span>
+                    <span className="text-[10px] font-bold uppercase bg-white text-stone-700 px-1.5 py-0.5 rounded border border-stone-200">
+                      {activeAddress.type || 'HOME'}
+                    </span>
+                  </div>
+                  <p className="text-stone-600 leading-relaxed font-medium">
+                    {activeAddress.doorNo ? `${activeAddress.doorNo}, ` : ''}{activeAddress.street || ''}, {activeAddress.area || ''}, {activeAddress.city || ''} -{' '}
+                    <span className="font-bold text-stone-800">{activeAddress.pincode || ''}</span>
+                  </p>
+                  {activeAddress.phone && (
+                    <p className="text-stone-500 font-semibold text-xs">📞 {activeAddress.phone}</p>
+                  )}
+                </div>
+              ) : (
+                <div className="p-4 bg-stone-50 border border-dashed border-stone-300 rounded-xl text-center space-y-2">
+                  <p className="text-xs font-bold text-stone-700">No delivery address selected</p>
+                  <button
+                    type="button"
+                    onClick={() => setShowAddressModal(true)}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-red-700 text-white text-xs font-bold shadow-2xs cursor-pointer"
+                  >
+                    <Plus className="w-3 h-3" />
+                    <span>Select Address</span>
+                  </button>
+                </div>
               )}
             </div>
           ) : (
-            <div className="p-5 bg-stone-50 border border-dashed border-stone-300 rounded-2xl text-center space-y-2">
-              <p className="text-sm font-bold text-stone-800">No delivery address selected</p>
-              <p className="text-xs text-stone-500">Please add or select an address to deliver your food.</p>
-              <button
-                type="button"
-                onClick={() => setShowAddressModal(true)}
-                className="mt-1 inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-red-700 hover:bg-red-800 text-white text-xs font-bold shadow-xs cursor-pointer"
-              >
-                <Plus className="w-3.5 h-3.5" />
-                <span>Add Delivery Address</span>
-              </button>
+            <div className="bg-amber-50/70 rounded-2xl border border-amber-200 p-4 sm:p-5 space-y-1">
+              <div className="flex items-center gap-2 text-amber-900 font-bold text-xs sm:text-sm">
+                <Store className="w-4 h-4 text-amber-700" />
+                <span>Self Pickup Counter</span>
+              </div>
+              <p className="text-xs text-stone-700 font-medium">
+                {settings?.restaurantName || "Hunter's Kitchen"} • {settings?.address || "Chinnavedapatti, Saravanampatti, Coimbatore"}
+              </p>
+              <p className="text-[11px] text-amber-800 font-semibold pt-0.5">
+                ⚡ Ready for collection in ~15 minutes.
+              </p>
             </div>
           )}
-        </div>
-      ) : (
-        <div className="bg-gradient-to-r from-red-900 via-red-800 to-stone-900 text-white rounded-2xl p-5 sm:p-6 shadow-md shadow-red-950/20 space-y-2.5 border border-red-700/40">
-          <div className="flex items-center gap-2.5 text-amber-300 font-extrabold text-sm sm:text-base uppercase tracking-wide">
-            <Store className="w-5 h-5 text-amber-300" />
-            <span>Self Pickup Location</span>
-          </div>
-          <div className="pl-7 space-y-1">
-            <p className="text-base sm:text-lg font-bold text-white">{settings?.restaurantName || "Hunter's Kitchen"}</p>
-            <p className="text-sm text-red-100 leading-relaxed">{settings?.address || "42 Richmond Road, Shanthi Nagar, Bengaluru"}</p>
-            <p className="text-xs text-amber-300 pt-1">
-              ⚡ Your food will be hot and packed ready for counter collection in ~15 minutes.
-            </p>
-          </div>
-        </div>
-      )}
 
-      {/* 4. COOKING & DELIVERY INSTRUCTIONS */}
-      <div className="bg-white rounded-2xl border border-stone-200/90 p-5 sm:p-6 shadow-xs space-y-3">
-        <div className="flex items-center gap-2.5">
-          <div className="w-8 h-8 rounded-xl bg-amber-50 text-amber-700 flex items-center justify-center font-bold">
-            <MessageSquare className="w-4 h-4" />
-          </div>
-          <div>
-            <h2 className="text-sm sm:text-base font-extrabold uppercase tracking-wide text-stone-900">
-              Cooking / Delivery Instructions
-            </h2>
-            <p className="text-xs text-stone-400 font-medium">Optional notes for kitchen & rider</p>
-          </div>
-        </div>
-        <textarea
-          value={orderNotes}
-          onChange={(e) => setOrderNotes(e.target.value)}
-          placeholder="e.g. Please send extra spicy salna, do not ring bell / leave at door..."
-          rows={2}
-          className="w-full p-3.5 rounded-xl border border-stone-200 bg-stone-50/50 text-sm text-stone-800 placeholder:text-stone-400 focus:bg-white focus:ring-2 focus:ring-red-600 focus:outline-none transition-all"
-        />
-      </div>
-    </div>
-
-    {/* Right Column: Sticky Payment Method & Final Bill Breakdown (lg:col-span-5) */}
-    <div className="lg:col-span-5 space-y-6 lg:sticky lg:top-20">
-      {/* 5. SELECT PAYMENT METHOD */}
-      <div className="bg-white rounded-2xl border border-stone-200/90 p-5 sm:p-6 shadow-xs space-y-4">
-        <div className="flex items-center justify-between pb-2 border-b border-stone-100">
-          <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-xl bg-red-50 text-red-700 flex items-center justify-center font-bold">
-              <CreditCard className="w-4 h-4 text-red-600" />
-            </div>
-            <div>
-              <h2 className="text-sm sm:text-base font-extrabold uppercase tracking-wide text-stone-900">
-                Select Payment Method
+          {/* 4. COOKING & DELIVERY INSTRUCTIONS */}
+          <div className="bg-white rounded-2xl border border-stone-200/90 p-4 sm:p-5 shadow-xs space-y-2.5">
+            <div className="flex items-center gap-2">
+              <div className="w-7 h-7 rounded-lg bg-amber-50 text-amber-700 flex items-center justify-center font-bold">
+                <MessageSquare className="w-3.5 h-3.5" />
+              </div>
+              <h2 className="text-xs sm:text-sm font-black uppercase tracking-wide text-stone-900">
+                Cooking / Delivery Instructions
               </h2>
-              <p className="text-xs text-stone-400 font-medium">Safe & secure checkout</p>
             </div>
+            <textarea
+              value={orderNotes}
+              onChange={(e) => setOrderNotes(e.target.value)}
+              placeholder="e.g. Please send extra spicy salna, do not ring bell / leave at door..."
+              rows={2}
+              className="w-full p-2.5 rounded-xl border border-stone-200 bg-stone-50/50 text-xs sm:text-sm text-stone-800 placeholder:text-stone-400 focus:bg-white focus:ring-2 focus:ring-red-600 focus:outline-none transition-all"
+            />
           </div>
-          <span className="text-xs font-bold text-stone-500 bg-stone-100 px-2.5 py-1 rounded-lg border border-stone-200 flex items-center gap-1">
-            <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" /> 100% Secure
-          </span>
         </div>
 
-        <div className="space-y-3">
-          {/* Online Payment Card */}
-          <label
-            onClick={() => setPaymentMethod('ONLINE')}
-            className={`p-4 rounded-2xl border flex items-center justify-between cursor-pointer transition-all ${
-              paymentMethod === 'ONLINE'
-                ? 'border-red-600 bg-red-50/70 ring-2 ring-red-600/20 shadow-xs'
-                : 'border-stone-200 hover:border-stone-300 bg-stone-50/40'
-            }`}
-          >
-            <div className="flex items-center gap-3.5">
-              <div className="w-11 h-11 rounded-2xl bg-red-100 text-red-700 flex items-center justify-center shrink-0 shadow-2xs">
-                <CreditCard className="w-6 h-6" />
-              </div>
-              <div>
-                <p className="text-sm sm:text-base font-extrabold text-stone-900">Online Payment</p>
-                <p className="text-xs sm:text-sm text-stone-500 mt-0.5">
-                  UPI (Google Pay, PhonePe, Paytm), Cards, NetBanking
-                </p>
-              </div>
-            </div>
-            <input
-              type="radio"
-              name="payment"
-              checked={paymentMethod === 'ONLINE'}
-              onChange={() => setPaymentMethod('ONLINE')}
-              className="w-5 h-5 text-red-600 focus:ring-red-600 cursor-pointer accent-red-600"
-            />
-          </label>
-
-          {/* Cash on Delivery Card */}
-          <label
-            onClick={() => setPaymentMethod('COD')}
-            className={`p-4 rounded-2xl border flex items-center justify-between cursor-pointer transition-all ${
-              paymentMethod === 'COD'
-                ? 'border-red-600 bg-red-50/70 ring-2 ring-red-600/20 shadow-xs'
-                : 'border-stone-200 hover:border-stone-300 bg-stone-50/40'
-            }`}
-          >
-            <div className="flex items-center gap-3.5">
-              <div className="w-11 h-11 rounded-2xl bg-emerald-100 text-emerald-800 flex items-center justify-center shrink-0 shadow-2xs">
-                <Banknote className="w-6 h-6" />
-              </div>
-              <div>
-                <p className="text-sm sm:text-base font-extrabold text-stone-900">Cash on Delivery (COD)</p>
-                <p className="text-xs sm:text-sm text-stone-500 mt-0.5">
-                  {fulfillmentType === 'DELIVERY'
-                    ? 'Pay with cash upon arrival at your doorstep'
-                    : 'Pay cash when collecting your food at the counter'}
-                </p>
-              </div>
-            </div>
-            <input
-              type="radio"
-              name="payment"
-              checked={paymentMethod === 'COD'}
-              onChange={() => setPaymentMethod('COD')}
-              className="w-5 h-5 text-red-600 focus:ring-red-600 cursor-pointer accent-red-600"
-            />
-          </label>
-
-          {/* COD Cash Note & Return Change Calculator (When COD selected) */}
-          {paymentMethod === 'COD' && (
-            <div
-              ref={cashNoteRef}
-              className={`mt-4 p-4 sm:p-5 rounded-2xl space-y-3.5 transition-all duration-200 ${
-                isCashNoteShaking
-                  ? 'animate-shake ring-2 ring-red-500 border-2 border-red-500 bg-red-50/90 shadow-lg'
-                  : activeCashTendered < effectiveGrandTotal
-                  ? 'bg-amber-50/80 border-2 border-amber-300 ring-1 ring-amber-400/50 shadow-xs'
-                  : 'bg-amber-50/70 border border-amber-200 shadow-xs'
-              }`}
-            >
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <Banknote className="w-5 h-5 text-amber-800" />
-                  <span className="font-extrabold text-sm sm:text-base text-stone-900">Cash Note You Will Provide</span>
+        {/* Right Column: Sticky Payment & Bill Breakdown */}
+        <div className="lg:col-span-5 space-y-4 lg:sticky lg:top-20">
+          {/* 5. SELECT PAYMENT METHOD */}
+          <div className="bg-white rounded-2xl border border-stone-200/90 p-4 sm:p-5 shadow-xs space-y-3">
+            <div className="flex items-center justify-between pb-2 border-b border-stone-100 gap-2">
+              <div className="flex items-center gap-2 min-w-0">
+                <div className="w-7 h-7 rounded-lg bg-red-50 text-red-700 flex items-center justify-center font-bold shrink-0">
+                  <CreditCard className="w-3.5 h-3.5" />
                 </div>
+                <h2 className="text-xs sm:text-sm font-black uppercase tracking-wide text-stone-900 truncate">
+                  Payment Method
+                </h2>
               </div>
+              <span className="shrink-0 whitespace-nowrap text-[10px] sm:text-[11px] font-bold text-stone-500 bg-stone-100 px-2 py-0.5 rounded-md border border-stone-200 flex items-center gap-1">
+                <ShieldCheck className="w-3 h-3 text-emerald-600 shrink-0" /> 100% Secure
+              </span>
+            </div>
 
-              {/* Note Selection Chips */}
-              <div className="flex flex-wrap gap-2 text-xs sm:text-sm">
-                {Array.from(new Set([Math.ceil(effectiveGrandTotal / 100) * 100, Math.ceil(effectiveGrandTotal / 500) * 500])).filter(amount => amount > effectiveGrandTotal).map((amount) => (
-                    <button
-                      key={amount}
-                      type="button"
-                      onClick={() => {
+            <div className="space-y-2">
+              {/* Online Payment */}
+              <label
+                onClick={() => setPaymentMethod('ONLINE')}
+                className={`p-3 rounded-xl border flex items-center justify-between cursor-pointer transition-all ${
+                  paymentMethod === 'ONLINE'
+                    ? 'border-red-500 bg-red-50/60 ring-1 ring-red-500/30 shadow-2xs'
+                    : 'border-stone-200 hover:border-stone-300 bg-stone-50/40'
+                }`}
+              >
+                <div className="flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-xl bg-red-100 text-red-700 flex items-center justify-center shrink-0 font-bold">
+                    <CreditCard className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <p className="text-xs sm:text-sm font-bold text-stone-900">Online Payment</p>
+                    <p className="text-[11px] text-stone-500">UPI, Cards, NetBanking</p>
+                  </div>
+                </div>
+                <input
+                  type="radio"
+                  name="payment"
+                  checked={paymentMethod === 'ONLINE'}
+                  onChange={() => setPaymentMethod('ONLINE')}
+                  className="w-4 h-4 text-red-600 focus:ring-red-600 cursor-pointer accent-red-600"
+                />
+              </label>
+
+              {/* COD */}
+              <label
+                onClick={() => setPaymentMethod('COD')}
+                className={`p-3 rounded-xl border flex items-center justify-between cursor-pointer transition-all ${
+                  paymentMethod === 'COD'
+                    ? 'border-red-500 bg-red-50/60 ring-1 ring-red-500/30 shadow-2xs'
+                    : 'border-stone-200 hover:border-stone-300 bg-stone-50/40'
+                }`}
+              >
+                <div className="flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-xl bg-emerald-100 text-emerald-800 flex items-center justify-center shrink-0 font-bold">
+                    <Banknote className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <p className="text-xs sm:text-sm font-bold text-stone-900">Cash on Delivery (COD)</p>
+                    <p className="text-[11px] text-stone-500">Pay cash upon arrival</p>
+                  </div>
+                </div>
+                <input
+                  type="radio"
+                  name="payment"
+                  checked={paymentMethod === 'COD'}
+                  onChange={() => setPaymentMethod('COD')}
+                  className="w-4 h-4 text-red-600 focus:ring-red-600 cursor-pointer accent-red-600"
+                />
+              </label>
+
+              {/* COD Calculator */}
+              {paymentMethod === 'COD' && (
+                <div
+                  ref={cashNoteRef}
+                  className={`mt-3 p-3.5 rounded-xl space-y-2.5 transition-all duration-200 ${
+                    isCashNoteShaking
+                      ? 'animate-shake ring-2 ring-red-500 border border-red-500 bg-red-50/90'
+                      : activeCashTendered < effectiveGrandTotal
+                      ? 'bg-amber-50/80 border border-amber-300 ring-1 ring-amber-400/50'
+                      : 'bg-amber-50/60 border border-amber-200'
+                  }`}
+                >
+                  <div className="flex items-center gap-1.5">
+                    <Banknote className="w-4 h-4 text-amber-800" />
+                    <span className="font-bold text-xs sm:text-sm text-stone-900">Cash Note You Will Provide</span>
+                  </div>
+
+                  {/* Chips */}
+                  <div className="flex flex-wrap gap-1.5 text-xs">
+                    {Array.from(new Set([Math.ceil(effectiveGrandTotal / 100) * 100, Math.ceil(effectiveGrandTotal / 500) * 500])).filter(amount => amount > effectiveGrandTotal).map((amount) => (
+                      <button
+                        key={amount}
+                        type="button"
+                        onClick={() => {
                           setCodCashNoteOption('CUSTOM');
                           setCustomCashAmount(amount.toString());
-                      }}
-                      className={`px-3.5 py-2 rounded-xl border font-bold transition-all cursor-pointer ${
-                        codCashNoteOption === 'CUSTOM' && customCashAmount === amount.toString()
-                          ? 'bg-amber-700 text-white border-amber-700 shadow-xs'
+                        }}
+                        className={`px-2.5 py-1 rounded-lg border font-bold transition-all cursor-pointer text-xs ${
+                          codCashNoteOption === 'CUSTOM' && customCashAmount === amount.toString()
+                            ? 'bg-amber-700 text-white border-amber-700'
+                            : 'bg-white text-stone-800 border-stone-200 hover:border-amber-400'
+                        }`}
+                      >
+                        ₹{amount}
+                      </button>
+                    ))}
+
+                    <button
+                      type="button"
+                      onClick={() => setCodCashNoteOption('EXACT')}
+                      className={`px-2.5 py-1 rounded-lg border font-bold transition-all cursor-pointer text-xs ${
+                        codCashNoteOption === 'EXACT'
+                          ? 'bg-amber-700 text-white border-amber-700'
                           : 'bg-white text-stone-800 border-stone-200 hover:border-amber-400'
                       }`}
                     >
-                      Suggest ₹{amount}
+                      Exact (₹{Number(effectiveGrandTotal).toFixed(2).replace(/\.00$/, '')})
                     </button>
-                ))}
 
-                <button
-                  type="button"
-                  onClick={() => setCodCashNoteOption('EXACT')}
-                  className={`px-3.5 py-2 rounded-xl border font-bold transition-all cursor-pointer ${
-                    codCashNoteOption === 'EXACT'
-                      ? 'bg-amber-700 text-white border-amber-700 shadow-xs'
-                      : 'bg-white text-stone-800 border-stone-200 hover:border-amber-400'
-                  }`}
-                >
-                  Exact (₹{effectiveGrandTotal})
-                </button>
+                    {effectiveGrandTotal <= 500 && (
+                      <button
+                        type="button"
+                        onClick={() => setCodCashNoteOption('500')}
+                        className={`px-2.5 py-1 rounded-lg border font-bold transition-all cursor-pointer text-xs ${
+                          codCashNoteOption === '500'
+                            ? 'bg-amber-700 text-white border-amber-700'
+                            : 'bg-white text-stone-800 border-stone-200 hover:border-amber-400'
+                        }`}
+                      >
+                        ₹500 Note
+                      </button>
+                    )}
+                  </div>
 
-                {effectiveGrandTotal <= 500 && (
-                  <button
-                    type="button"
-                    onClick={() => setCodCashNoteOption('500')}
-                    className={`px-3.5 py-2 rounded-xl border font-bold transition-all cursor-pointer ${
-                      codCashNoteOption === '500'
-                        ? 'bg-amber-700 text-white border-amber-700 shadow-xs'
-                        : 'bg-white text-stone-800 border-stone-200 hover:border-amber-400'
-                    }`}
-                  >
-                    ₹500 Note
-                  </button>
-                )}
-
-                <button
-                  type="button"
-                  onClick={() => setCodCashNoteOption('CUSTOM')}
-                  className={`px-3.5 py-2 rounded-xl border font-bold transition-all cursor-pointer ${
-                    codCashNoteOption === 'CUSTOM'
-                      ? 'bg-amber-700 text-white border-amber-700 shadow-xs'
-                      : 'bg-white text-stone-800 border-stone-200 hover:border-amber-400'
-                  }`}
-                >
-                  Custom Amount
-                </button>
-              </div>
-
-              {/* Custom Cash Input */}
-              {codCashNoteOption === 'CUSTOM' && (
-                <div className="pt-2">
-                  <label className="text-xs sm:text-sm font-bold text-stone-700 block mb-1.5">
-                    Enter cash note / amount you have (₹)
-                  </label>
-                  <input
-                    type="number"
-                    min={effectiveGrandTotal}
-                    value={customCashAmount}
-                    onChange={(e) => setCustomCashAmount(e.target.value)}
-                    placeholder={`e.g. ${effectiveGrandTotal + 100}`}
-                    className="w-full p-3 bg-white rounded-xl border border-stone-300 text-sm font-bold focus:ring-2 focus:ring-amber-500 outline-none shadow-xs"
-                  />
+                  {/* Calculation Card */}
+                  <div className="p-2.5 bg-white rounded-lg border border-amber-200 space-y-1.5 text-xs">
+                    <div className="flex justify-between text-stone-600">
+                      <span>Order Total Bill:</span>
+                      <span className="font-bold text-stone-900">₹{Number(effectiveGrandTotal).toFixed(2).replace(/\.00$/, '')}</span>
+                    </div>
+                    <div className="pt-1 border-t border-dashed border-stone-200 flex justify-between font-bold">
+                      <span className="text-stone-800">Cash Provided:</span>
+                      <span className="text-amber-900 font-extrabold">₹{activeCashTendered}</span>
+                    </div>
+                    <div className="pt-1 border-t border-dashed border-stone-200 flex justify-between font-extrabold text-xs sm:text-sm">
+                      <span className="text-stone-800">Remaining Change Due:</span>
+                      <span className={codChangeDue > 0 ? 'text-emerald-700 font-black' : 'text-stone-600 font-bold'}>
+                        {codChangeDue > 0 ? `₹${Number(codChangeDue).toFixed(2).replace(/\.00$/, '')}` : '₹0'}
+                      </span>
+                    </div>
+                  </div>
                 </div>
-              )}
-
-              {/* Evaluation Result Card */}
-              <div className="p-3.5 bg-white rounded-xl border border-amber-200 space-y-2 text-sm">
-                <div className="flex justify-between text-stone-600">
-                  <span className="font-medium">Order Total Bill:</span>
-                  <span className="font-extrabold text-stone-900">₹{effectiveGrandTotal}</span>
-                </div>
-                <div className="pt-2 border-t border-dashed border-stone-200 flex justify-between font-bold text-sm">
-                  <span className="text-stone-800">Cash Provided:</span>
-                  <span className="text-amber-900 font-extrabold">₹{activeCashTendered}</span>
-                </div>
-                <div className="pt-2 border-t border-dashed border-stone-200 flex justify-between font-extrabold text-sm sm:text-base">
-                  <span className="text-stone-800">Remaining Change Due:</span>
-                  <span className={codChangeDue > 0 ? 'text-emerald-700 font-black' : 'text-stone-600 font-bold'}>
-                    {codChangeDue > 0 ? `₹${codChangeDue}` : 'Exact Cash (₹0)'}
-                  </span>
-                </div>
-              </div>
-
-              {activeCashTendered < effectiveGrandTotal && (
-                <p className="text-xs sm:text-sm font-bold text-red-600 bg-red-50 p-2.5 rounded-xl border border-red-200">
-                  ⚠️ Cash note (₹{activeCashTendered}) is less than total bill ₹{effectiveGrandTotal}.
-                </p>
               )}
             </div>
-          )}
-        </div>
-      </div>
+          </div>
 
-      {/* 6. FINAL BILL BREAKDOWN CARD */}
-      <div className="bg-white rounded-2xl border border-stone-200/90 p-5 sm:p-6 shadow-xs space-y-3.5">
-        <h3 className="font-extrabold text-sm sm:text-base text-stone-900 uppercase tracking-wide pb-2 border-b border-stone-100">
-          Final Bill Breakdown
-        </h3>
+          {/* 6. BILL DETAILS CARD (Swiggy Invoice Style) */}
+          <div className="bg-white rounded-2xl border border-stone-200/90 p-4 sm:p-5 shadow-xs space-y-3">
+            <h3 className="font-extrabold text-xs sm:text-sm text-stone-900 uppercase tracking-wide pb-2 border-b border-stone-100">
+              Bill Details
+            </h3>
 
-        <div className="flex justify-between text-sm sm:text-base text-stone-600">
-          <span>Items Subtotal ({cartItems.length} {cartItems.length === 1 ? 'dish' : 'dishes'})</span>
-          <span className="font-bold text-stone-900">₹{subtotal}</span>
-        </div>
-
-        <div className="flex justify-between text-sm sm:text-base text-stone-600">
-          <span>Delivery Fee</span>
-          <span>
-            {effectiveDeliveryFee === 0 ? (
-              <span className="font-black text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200 text-xs sm:text-sm">
-                FREE
-              </span>
-            ) : (
-              <span className="font-bold text-stone-900">₹{effectiveDeliveryFee}</span>
-            )}
-          </span>
-        </div>
-
-        <div className="flex justify-between text-sm sm:text-base text-stone-600">
-          <span className="flex items-center gap-1.5">
-            <span>Taxes & Charges (5% GST)</span>
-            <button
-              type="button"
-              onClick={() => setShowTaxInfo(true)}
-              className="text-stone-400 hover:text-red-600 p-0.5 rounded-full transition-colors cursor-pointer inline-flex items-center"
-              title="Click for tax breakdown"
-            >
-              <Info className="w-4 h-4 text-stone-400 hover:text-red-600" />
-            </button>
-          </span>
-          <span className="font-bold text-stone-900">₹{tax}</span>
-        </div>
-
-        {/* Tax Breakdown Pop Up Tab Modal */}
-        {showTaxInfo && (
-          <div className="fixed inset-0 bg-stone-950/75 backdrop-blur-xs z-50 flex items-center justify-center p-4 animate-in fade-in duration-150">
-            <div className="bg-white w-full max-w-sm rounded-3xl p-6 space-y-4 shadow-2xl border border-stone-100 scale-100 animate-in zoom-in-95 duration-200 relative">
-              {/* Modal Header */}
-              <div className="flex items-center justify-between border-b border-stone-100 pb-3">
-                <div className="flex items-center gap-2.5">
-                  <div className="w-9 h-9 rounded-full bg-amber-50 text-amber-700 flex items-center justify-center">
-                    <ShieldCheck className="w-5 h-5" />
-                  </div>
-                  <div>
-                    <h3 className="font-black text-stone-900 text-base">Tax & Levy Breakdown</h3>
-                    <p className="text-xs text-stone-400 font-medium">Govt. Mandated 5% GST Split</p>
-                  </div>
-                </div>
-                <button
-                  onClick={() => setShowTaxInfo(false)}
-                  className="w-8 h-8 rounded-full bg-stone-100 hover:bg-stone-200 text-stone-500 flex items-center justify-center transition-colors cursor-pointer"
-                >
-                  <X className="w-4 h-4" />
-                </button>
+            <div className="space-y-2 text-xs sm:text-sm text-stone-600">
+              <div className="flex justify-between items-center">
+                <span>Item Total ({cartItems.length} {cartItems.length === 1 ? 'dish' : 'dishes'})</span>
+                <span className="font-bold text-stone-900">₹{subtotal}</span>
               </div>
 
-              {/* Tax Details Cards */}
-              <div className="space-y-2.5 text-sm">
-                <div className="p-3.5 bg-stone-50 rounded-2xl border border-stone-200/80 flex items-center justify-between">
-                  <div>
-                    <p className="font-bold text-stone-900">Central GST (CGST)</p>
-                    <p className="text-xs text-stone-500">2.5% on food subtotal</p>
-                  </div>
-                  <span className="font-black text-stone-900 text-base">₹{cgst}</span>
-                </div>
-
-                <div className="p-3.5 bg-stone-50 rounded-2xl border border-stone-200/80 flex items-center justify-between">
-                  <div>
-                    <p className="font-bold text-stone-900">State GST (SGST)</p>
-                    <p className="text-xs text-stone-500">2.5% on food subtotal</p>
-                  </div>
-                  <span className="font-black text-stone-900 text-base">₹{sgst}</span>
-                </div>
-
-                <div className="p-4 bg-red-50/90 rounded-2xl border border-red-200 flex items-center justify-between text-red-900">
-                  <div>
-                    <p className="font-black text-sm">Total Taxes (5%)</p>
-                    <p className="text-xs text-red-700 font-medium">Calculated on ₹{subtotal}</p>
-                  </div>
-                  <span className="font-black text-lg text-red-700">₹{tax}</span>
-                </div>
+              <div className="flex justify-between items-center">
+                <span>Delivery Partner Fee</span>
+                <span>
+                  {effectiveDeliveryFee === 0 ? (
+                    <span className="font-black text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded text-[11px] border border-emerald-200">
+                      FREE
+                    </span>
+                  ) : (
+                    <span className="font-bold text-stone-900">₹{effectiveDeliveryFee}</span>
+                  )}
+                </span>
               </div>
 
-              {/* Notice */}
-              <p className="text-xs text-stone-400 text-center leading-relaxed">
-                As per Govt. regulations, a total of 5% GST is applicable on restaurant food orders (2.5% CGST + 2.5% SGST).
-              </p>
+              <div className="flex justify-between items-center">
+                <span className="flex items-center gap-1">
+                  <span>Taxes and Charges (5% GST)</span>
+                  <button
+                    type="button"
+                    onClick={() => setShowTaxInfo(true)}
+                    className="text-stone-400 hover:text-red-600 p-0.5 cursor-pointer inline-flex items-center"
+                    title="Click for tax breakdown"
+                  >
+                    <Info className="w-3.5 h-3.5 text-stone-400 hover:text-red-600" />
+                  </button>
+                </span>
+                <span className="font-bold text-stone-900">₹{Number(tax).toFixed(2).replace(/\.00$/, '')}</span>
+              </div>
 
-              {/* Action Button */}
+              {/* Tax Modal */}
+              {showTaxInfo && (
+                <div className="fixed inset-0 bg-stone-950/75 backdrop-blur-xs z-50 flex items-center justify-center p-4 animate-in fade-in duration-150">
+                  <div className="bg-white w-full max-w-sm rounded-3xl p-5 space-y-3.5 shadow-2xl border border-stone-100 scale-100 animate-in zoom-in-95 duration-200 relative">
+                    <div className="flex items-center justify-between border-b border-stone-100 pb-2.5">
+                      <div className="flex items-center gap-2">
+                        <div className="w-8 h-8 rounded-full bg-amber-50 text-amber-700 flex items-center justify-center">
+                          <ShieldCheck className="w-4 h-4" />
+                        </div>
+                        <div>
+                          <h3 className="font-black text-stone-900 text-sm">Tax Breakdown</h3>
+                          <p className="text-[11px] text-stone-400 font-medium">Govt. Mandated 5% GST Split</p>
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => setShowTaxInfo(false)}
+                        className="w-7 h-7 rounded-full bg-stone-100 hover:bg-stone-200 text-stone-500 flex items-center justify-center transition-colors cursor-pointer"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+
+                    <div className="space-y-2 text-xs">
+                      <div className="p-3 bg-stone-50 rounded-xl border border-stone-200/80 flex items-center justify-between">
+                        <div>
+                          <p className="font-bold text-stone-900">Central GST (CGST)</p>
+                          <p className="text-[10px] text-stone-500">2.5% on food subtotal</p>
+                        </div>
+                        <span className="font-black text-stone-900 text-sm">₹{cgst}</span>
+                      </div>
+
+                      <div className="p-3 bg-stone-50 rounded-xl border border-stone-200/80 flex items-center justify-between">
+                        <div>
+                          <p className="font-bold text-stone-900">State GST (SGST)</p>
+                          <p className="text-[10px] text-stone-500">2.5% on food subtotal</p>
+                        </div>
+                        <span className="font-black text-stone-900 text-sm">₹{sgst}</span>
+                      </div>
+
+                      <div className="p-3 bg-red-50/90 rounded-xl border border-red-200 flex items-center justify-between text-red-900">
+                        <div>
+                          <p className="font-black text-xs">Total Taxes (5%)</p>
+                          <p className="text-[10px] text-red-700">Calculated on ₹{subtotal}</p>
+                        </div>
+                        <span className="font-black text-sm text-red-700">₹{Number(tax).toFixed(2).replace(/\.00$/, '')}</span>
+                      </div>
+                    </div>
+
+                    <button
+                      onClick={() => setShowTaxInfo(false)}
+                      className="w-full py-2.5 rounded-xl bg-red-700 hover:bg-red-800 text-white text-xs font-bold shadow-md transition-colors cursor-pointer"
+                    >
+                      Got It
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              <div className="pt-3 border-t border-stone-200 flex justify-between items-baseline font-black text-sm sm:text-base text-stone-900">
+                <span className="uppercase tracking-wide font-black">To Pay</span>
+                <span className="text-lg sm:text-xl font-black text-stone-900">₹{Number(effectiveGrandTotal).toFixed(2).replace(/\.00$/, '')}</span>
+              </div>
+            </div>
+
+            {/* Place Order Primary Action Button */}
+            <div className="pt-2">
               <button
-                onClick={() => setShowTaxInfo(false)}
-                className="w-full py-3 rounded-xl bg-red-700 hover:bg-red-800 text-white text-sm font-bold shadow-md transition-colors cursor-pointer"
+                disabled={isSubmitting}
+                onClick={handlePlaceOrder}
+                className="w-full py-3.5 px-4 rounded-xl bg-red-700 hover:bg-red-800 active:scale-[0.99] text-white font-black text-sm sm:text-base shadow-lg shadow-red-700/20 flex items-center justify-center gap-2 transition-all disabled:opacity-50 cursor-pointer uppercase tracking-wider"
               >
-                Got It
+                {isSubmitting ? (
+                  <>
+                    <Loader2 className="w-5 h-5 animate-spin text-white" />
+                    <span>Processing Order...</span>
+                  </>
+                ) : (
+                  <>
+                    <ShieldCheck className="w-5 h-5 text-white" />
+                    <span>Place Order • ₹{Number(effectiveGrandTotal).toFixed(2).replace(/\.00$/, '')}</span>
+                  </>
+                )}
               </button>
             </div>
           </div>
-        )}
-
-        <div className="pt-3.5 border-t border-stone-200 flex justify-between items-baseline font-black text-base sm:text-lg text-stone-900">
-          <span>Amount Payable</span>
-          <span className="text-xl sm:text-2xl font-black text-red-700">₹{effectiveGrandTotal}</span>
-        </div>
-
-        {/* Place Order Primary Action Button */}
-        <div className="pt-2">
-          <button
-            disabled={isSubmitting}
-            onClick={handlePlaceOrder}
-            className="w-full py-4 px-6 rounded-2xl bg-red-700 hover:bg-red-800 active:scale-[0.99] text-white font-extrabold text-base sm:text-lg shadow-xl shadow-red-700/20 flex items-center justify-center gap-2.5 transition-all disabled:opacity-50 cursor-pointer"
-          >
-            {isSubmitting ? (
-              <>
-                <Loader2 className="w-6 h-6 animate-spin text-white" />
-                <span>Processing Order...</span>
-              </>
-            ) : (
-              <>
-                <ShieldCheck className="w-6 h-6 text-white" />
-                <span>Place Order • ₹{effectiveGrandTotal}</span>
-              </>
-            )}
-          </button>
         </div>
       </div>
-    </div>
-  </div>
 
       {/* ADDRESS SELECTOR / ADD MODAL */}
       {showAddressModal && (

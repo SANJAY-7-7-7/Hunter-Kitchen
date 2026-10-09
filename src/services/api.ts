@@ -467,5 +467,28 @@ export const apiService = {
   },
   verifyAuditIntegrity: () => fetchApi<{ isValid: boolean; checkedCount: number; genesisHash: string; latestHash: string; brokenAt?: number; error?: string }>('/owner/audit-logs/verify'),
   getOutboxEvents: (limit: number = 30) => fetchApi<any[]>(`/owner/outbox?limit=${limit}`),
-  runReconciliation: () => fetchApi<{ timestamp: string; totalOrdersAudited: number; anomaliesDetected: number; issues: any[] }>('/owner/reconciliation')
+  runReconciliation: () => fetchApi<{ timestamp: string; totalOrdersAudited: number; anomaliesDetected: number; issues: any[] }>('/owner/reconciliation'),
+
+  // Online Payment Gateway Integration (Razorpay)
+  createGatewayOrder: (orderId: string) =>
+    fetchApi<{
+      keyId: string;
+      gatewayOrderId: string;
+      amountPaise: number;
+      currency: string;
+      orderNumber: string;
+    }>('/payments/create-order', {
+      method: 'POST',
+      body: JSON.stringify({ orderId })
+    }),
+  verifyPayment: (payload: {
+    orderId: string;
+    razorpayOrderId: string;
+    razorpayPaymentId: string;
+    razorpaySignature: string;
+  }) =>
+    fetchApi<{ success: boolean; message: string }>('/payments/verify', {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    })
 };

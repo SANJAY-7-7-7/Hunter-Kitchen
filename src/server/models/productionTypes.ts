@@ -16,6 +16,7 @@ export type OutboxEventType =
   | 'COD_COLLECTED'
   | 'ORDER_DELIVERED'
   | 'ORDER_CANCELLED'
+  | 'ORDER_PAYMENT_VERIFIED'
   | 'MENU_ITEM_UPDATED'
   | 'SYSTEM_ALERT';
 

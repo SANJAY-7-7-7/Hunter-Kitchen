@@ -53,6 +53,30 @@ class OutboxRepository {
     return res.rows.map(this.rowToEvent);
   }
 
+  /**
+   * Concurrency-safe atomic event claiming for horizontal multi-instance scaling
+   */
+  async claimPendingEvents(limit: number = 10): Promise<OutboxEvent[]> {
+    const res = await postgresDb.query(
+      `WITH batch AS (
+         SELECT id FROM outbox_events
+         WHERE (status = 'PENDING' OR status = 'FAILED')
+           AND (next_retry_at IS NULL OR next_retry_at <= NOW())
+         ORDER BY created_at ASC
+         LIMIT $1
+         FOR UPDATE SKIP LOCKED
+       )
+       UPDATE outbox_events
+       SET status = 'PROCESSING',
+           processing_started_at = NOW()
+       FROM batch
+       WHERE outbox_events.id = batch.id
+       RETURNING outbox_events.*`,
+      [limit]
+    );
+    return res.rows.map(this.rowToEvent);
+  }
+
   async update(id: string, updates: Partial<OutboxEvent>): Promise<OutboxEvent | undefined> {
     const current = await this.getById(id);
     if (!current) return undefined;

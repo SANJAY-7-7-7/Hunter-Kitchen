@@ -1,3 +1,4 @@
+import crypto from 'crypto';
 import { outboxRepository } from '../repositories/outboxRepository';
 import { OutboxEvent } from '../models/productionTypes';
 import { eventHub } from '../services/eventHub';
@@ -12,11 +13,11 @@ class OutboxWorker {
   start() {
     if (this.isRunning) return;
     this.isRunning = true;
-    logger.info('Outbox background worker started');
+    logger.info('Outbox background worker started with atomic concurrency claims');
 
     this.timer = setInterval(() => {
       // Periodically recover any jobs stuck in PROCESSING longer than 60s
-      outboxRepository.recoverStaleProcessing(60000);
+      outboxRepository.recoverStaleProcessing(60000).catch(() => {});
 
       this.processOutboxBatch().catch((err) => {
         logger.error('Error in outbox processing cycle', err);
@@ -38,7 +39,8 @@ class OutboxWorker {
     this.isProcessing = true;
 
     try {
-      const pendingEvents = await outboxRepository.getPendingEvents(10);
+      // Concurrency-safe atomic event claiming using FOR UPDATE SKIP LOCKED
+      const pendingEvents = await outboxRepository.claimPendingEvents(10);
       if (pendingEvents.length === 0) {
         this.isProcessing = false;
         return;
@@ -53,11 +55,6 @@ class OutboxWorker {
   }
 
   private async processEvent(event: OutboxEvent): Promise<void> {
-    await outboxRepository.update(event.id, { 
-      status: 'PROCESSING',
-      processingStartedAt: new Date().toISOString()
-    });
-
     try {
       // 1. Dispatch through real-time SSE Hub to subscribed web clients
       eventHub.broadcast(event.eventType, {
@@ -67,8 +64,44 @@ class OutboxWorker {
         timestamp: new Date().toISOString()
       });
 
-      // 2. Mock / external notification dispatch (SMS / Push simulation)
-      logger.info(`[Outbox Worker] Dispatched event ${event.eventType} for ${event.aggregateType}#${event.aggregateId}`, {
+      // 2. Outgoing webhook dispatch if targeted or configured
+      if (event.payload?.webhookUrl || event.eventType.startsWith('WEBHOOK.') || process.env.OUTGOING_WEBHOOK_URL) {
+        const targetUrl = event.payload?.webhookUrl || process.env.OUTGOING_WEBHOOK_URL;
+        if (targetUrl) {
+          const bodyPayload = JSON.stringify({
+            eventId: event.id,
+            eventType: event.eventType,
+            aggregateType: event.aggregateType,
+            aggregateId: event.aggregateId,
+            payload: event.payload,
+            timestamp: new Date().toISOString()
+          });
+
+          const signature = crypto
+            .createHmac('sha256', config.webhookSecret || 'secret')
+            .update(bodyPayload)
+            .digest('hex');
+
+          try {
+            await fetch(targetUrl, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'X-Hunters-Signature': signature,
+                'X-Hunters-Event': event.eventType,
+                'User-Agent': "Hunter's Kitchen Webhook Dispatcher/1.0"
+              },
+              body: bodyPayload,
+              signal: AbortSignal.timeout(6000)
+            });
+            logger.info(`Successfully dispatched outgoing webhook to ${targetUrl} for ${event.eventType}`);
+          } catch (netErr: any) {
+            logger.warn(`Webhook endpoint delivery failed: ${targetUrl}`, { error: netErr.message });
+          }
+        }
+      }
+
+      logger.info(`[Outbox Worker] Successfully processed event ${event.eventType} for ${event.aggregateType}#${event.aggregateId}`, {
         eventId: event.id,
         eventType: event.eventType
       });

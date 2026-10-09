@@ -105,8 +105,8 @@ export class OrderService {
       discount: 0,
       grandTotal,
       paymentMethod: payload.paymentMethod || 'COD',
-      paymentStatus: payload.paymentMethod === 'ONLINE' ? 'VERIFIED' : 'COD_PENDING',
-      paymentTransactionId: payload.paymentMethod === 'ONLINE' ? `TXN_${Date.now()}` : undefined,
+      paymentStatus: payload.paymentMethod === 'ONLINE' ? 'PENDING' : 'COD_PENDING',
+      paymentTransactionId: undefined,
       codCashTendered: payload.paymentMethod === 'COD' && payload.codCashTendered ? Number(payload.codCashTendered) : undefined,
       codChangeDue: payload.paymentMethod === 'COD' && payload.codChangeDue !== undefined ? Number(payload.codChangeDue) : undefined,
       status: 'PLACED'

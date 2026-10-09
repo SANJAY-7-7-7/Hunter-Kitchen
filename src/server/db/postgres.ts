@@ -25,18 +25,33 @@ export class PostgresDatabase {
     }
 
     try {
-      // Step 1: Ensure database exists by connecting to 'postgres' system database
-      await this.ensureDatabaseExists();
+      // Step 1: Ensure database exists only for standalone local setups (managed cloud databases like Supabase pre-exist)
+      if (!config.databaseUrl) {
+        await this.ensureDatabaseExists();
+      }
 
-      // Step 2: Initialize primary connection pool for 'hunters_kitchen'
+      // Step 2: Auto-detect SSL requirement for Supabase, Cloud DBs, or when explicitly requested
+      const isCloudTarget = !!(
+        config.databaseUrl &&
+        (config.databaseUrl.includes('supabase') ||
+          config.databaseUrl.includes('pooler') ||
+          config.databaseUrl.includes('sslmode=require') ||
+          config.databaseUrl.includes('render.com') ||
+          config.databaseUrl.includes('amazonaws.com') ||
+          config.env === 'production')
+      );
+      const requiresSsl = config.dbSsl || isCloudTarget;
+      const sslConfig = requiresSsl ? { rejectUnauthorized: false } : undefined;
+
+      // Step 3: Initialize primary connection pool
       const poolConfig = config.databaseUrl
         ? {
             connectionString: config.databaseUrl,
-            ssl: config.dbSsl ? { rejectUnauthorized: false } : undefined,
+            ssl: sslConfig,
             min: config.dbPoolMin,
             max: config.dbPoolMax,
             idleTimeoutMillis: 30000,
-            connectionTimeoutMillis: 10000
+            connectionTimeoutMillis: 15000
           }
         : {
             host: config.dbHost,
@@ -44,11 +59,11 @@ export class PostgresDatabase {
             database: config.dbDatabase,
             user: config.dbUsername,
             password: config.dbPassword,
-            ssl: config.dbSsl ? { rejectUnauthorized: false } : undefined,
+            ssl: sslConfig,
             min: config.dbPoolMin,
             max: config.dbPoolMax,
             idleTimeoutMillis: 30000,
-            connectionTimeoutMillis: 10000
+            connectionTimeoutMillis: 15000
           };
 
       this.pool = new Pool(poolConfig);
@@ -57,15 +72,15 @@ export class PostgresDatabase {
         logger.error('Unexpected error on idle PostgreSQL client pool', { error: err.message, stack: err.stack });
       });
 
-      // Step 3: Test connection
+      // Step 4: Test connection
       const client = await this.pool.connect();
       try {
-        const res = await client.query('SELECT version(), NOW() AS server_time');
-        logger.info('PostgreSQL primary database connected successfully', {
+        const res = await client.query('SELECT version(), NOW() AS server_time, current_database() AS db_name');
+        logger.info('PostgreSQL database connected successfully', {
           version: res.rows[0].version.split(' on ')[0],
-          database: config.dbDatabase,
-          host: config.dbHost,
-          port: config.dbPort
+          database: res.rows[0].db_name || config.dbDatabase,
+          ssl: !!sslConfig,
+          mode: config.databaseUrl ? 'Cloud / Supabase Connection URI' : 'Direct Parameters'
         });
       } finally {
         client.release();
@@ -79,6 +94,10 @@ export class PostgresDatabase {
   }
 
   private async ensureDatabaseExists(): Promise<void> {
+    if (config.databaseUrl) {
+      return; // Skip on managed cloud databases (Supabase, Neon, RDS)
+    }
+
     const adminPool = new Pool({
       host: config.dbHost,
       port: config.dbPort,

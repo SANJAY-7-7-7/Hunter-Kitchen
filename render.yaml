@@ -1,0 +1,63 @@
+# ==============================================================================
+# HUNTER'S KITCHEN — RENDER INFRASTRUCTURE BLUEPRINT (render.yaml)
+# ==============================================================================
+# Deploys Hunter's Kitchen production web service on Render Free Tier connected
+# to Supabase Free Tier PostgreSQL Database.
+# ==============================================================================
+
+services:
+  - type: web
+    name: hunters-kitchen
+    runtime: node
+    plan: free
+    region: singapore # Options: singapore, oregon, ohio, frankfurt
+    buildCommand: npm install && npm run build
+    startCommand: npm run start
+    healthCheckPath: /api/health
+    autoDeploy: true
+    envVars:
+      - key: NODE_ENV
+        value: production
+
+      # --------------------------------------------------------------------------
+      # Supabase Free Tier PostgreSQL Connection URI
+      # Example: postgresql://postgres.[ref]:[PASSWORD]@aws-0-[region].pooler.supabase.com:6543/postgres
+      # --------------------------------------------------------------------------
+      - key: DATABASE_URL
+        sync: false
+
+      - key: DB_SSL
+        value: "true"
+
+      # --------------------------------------------------------------------------
+      # Secrets (Render will auto-generate secure 32+ character random strings)
+      # --------------------------------------------------------------------------
+      - key: JWT_SECRET
+        generateValue: true
+
+      - key: SESSION_COOKIE_SECRET
+        generateValue: true
+
+      # --------------------------------------------------------------------------
+      # Optional Integrations (Fill in Render Dashboard if available)
+      # --------------------------------------------------------------------------
+      - key: RAZORPAY_KEY_ID
+        sync: false
+
+      - key: RAZORPAY_KEY_SECRET
+        sync: false
+
+      - key: WEBHOOK_SECRET
+        sync: false
+
+      - key: GMAIL_USER
+        sync: false
+
+      - key: GMAIL_APP_PASSWORD
+        sync: false
+
+      - key: GEMINI_API_KEY
+        sync: false
+
+      - key: GOOGLE_MAPS_PLATFORM_KEY
+        sync: false
